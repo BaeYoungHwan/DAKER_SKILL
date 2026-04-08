@@ -111,7 +111,11 @@ def get_rsi_signal(rsi_value: float) -> str:
 
 def detect_golden_cross(ma_short: pd.Series, ma_long: pd.Series) -> Optional[pd.Timestamp]:
     """골든크로스 최근 발생 시점 탐지"""
-    cross = (ma_short > ma_long) & (ma_short.shift(1) <= ma_long.shift(1))
+    # 공통 인덱스로 정렬 후 NaN 제거
+    aligned = pd.DataFrame({"short": ma_short, "long": ma_long}).dropna()
+    if aligned.empty:
+        return None
+    cross = (aligned["short"] > aligned["long"]) & (aligned["short"].shift(1) <= aligned["long"].shift(1))
     if cross.any():
         return cross[cross].index[-1]
     return None

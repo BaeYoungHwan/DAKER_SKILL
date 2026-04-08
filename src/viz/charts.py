@@ -93,7 +93,7 @@ def candlestick_chart(
     fig.update_layout(
         title=f"{ticker} 주가 차트",
         xaxis_rangeslider_visible=False,
-        template="plotly_dark",
+        template="plotly_white",
         height=550,
         margin=dict(l=0, r=0, t=40, b=0),
     )
@@ -116,7 +116,7 @@ def line_chart_multi(
     fig.update_layout(
         title=title,
         yaxis_title="누적 수익률 (%)" if normalize else "가격",
-        template="plotly_dark",
+        template="plotly_white",
         height=400,
         margin=dict(l=0, r=0, t=40, b=0),
         hovermode="x unified",
@@ -144,7 +144,7 @@ def portfolio_pie(weights: dict[str, float]) -> go.Figure:
     ))
     fig.update_layout(
         title="포트폴리오 자산 배분",
-        template="plotly_dark",
+        template="plotly_white",
         height=350,
         margin=dict(l=0, r=0, t=40, b=0),
     )
@@ -158,7 +158,7 @@ def portfolio_treemap(weights: dict[str, float]) -> go.Figure:
         values=list(weights.values()),
         title="포트폴리오 자산 배분",
     )
-    fig.update_layout(template="plotly_dark", height=350)
+    fig.update_layout(template="plotly_white", height=350)
     return fig
 
 
@@ -176,7 +176,7 @@ def correlation_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
     ))
     fig.update_layout(
         title="자산 간 상관관계",
-        template="plotly_dark",
+        template="plotly_white",
         height=400,
         margin=dict(l=0, r=0, t=40, b=0),
     )
@@ -199,7 +199,7 @@ def rsi_chart(rsi: pd.Series, ticker: str) -> go.Figure:
     fig.update_layout(
         title=f"{ticker} RSI (14)",
         yaxis=dict(range=[0, 100]),
-        template="plotly_dark",
+        template="plotly_white",
         height=280,
         margin=dict(l=0, r=0, t=40, b=0),
     )

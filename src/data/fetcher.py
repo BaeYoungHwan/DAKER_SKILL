@@ -25,6 +25,10 @@ def fetch_price(ticker: str, period: str = DEFAULT_PERIOD) -> pd.DataFrame:
     if data.empty:
         return pd.DataFrame()
 
+    # MultiIndex 컬럼 평탄화 (yfinance >= 0.2.x 대응)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+
     # 결측값 처리: forward fill (Skills/analysis.md §4)
     data = data.ffill()
 
