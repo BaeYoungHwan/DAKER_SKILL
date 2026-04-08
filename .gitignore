@@ -1,4 +1,12 @@
-# Byte-compiled / optimized / DLL files
+# ── Claude Code 설정 (로컬 전용) ─────────────────────────────
+.claude/
+.mcp.json
+CLAUDE.md
+agents/
+global-setup/
+logs/
+
+# ── Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
