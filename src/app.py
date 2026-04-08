@@ -260,7 +260,7 @@ with tab_compare:
             continue
         row = {"종목": t}
         for label, days in [("1개월", 21), ("3개월", 63), ("6개월", 126), ("1년", 252)]:
-            if len(c) > days:
+            if len(c) >= days:
                 ret = (float(c.iloc[-1]) / float(c.iloc[-days]) - 1) * 100
                 row[label] = f"{ret:+.1f}%"
             else:
@@ -357,3 +357,72 @@ with tab_insight:
     high_count = sum(1 for _, p, *_ in insights if p == "High")
     medium_count = sum(1 for _, p, *_ in insights if p == "Medium")
     st.info(f"**분석 요약:** 총 {len(insights)}개 신호 감지 — 🔴 High: {high_count}개 / 🟡 Medium: {medium_count}개")
+
+    # 자동 텍스트 리포트 (Skills/insight.md §4 리포트 흐름)
+    st.divider()
+    st.subheader("📄 자동 생성 투자 리포트")
+
+    info_r = info_data.get(main_ticker, {})
+    analysis_date = pd.Timestamp.now().strftime("%Y년 %m월 %d일")
+    period_label = {"1mo": "1개월", "3mo": "3개월", "6mo": "6개월", "1y": "1년", "2y": "2년", "5y": "5년"}.get(period, period)
+
+    # 전반적 평가
+    if high_count >= 2:
+        overall = "⚠️ 주의 필요 — 복수의 High 신호 발생 중"
+        overall_detail = "리스크 관리와 포지션 재검토가 권장됩니다."
+    elif high_count == 1:
+        overall = "🔶 모니터링 필요 — 1개의 High 신호 발생"
+        overall_detail = "해당 신호를 중심으로 전략을 점검하세요."
+    elif medium_count >= 2:
+        overall = "🟡 일부 주의 — Medium 신호 다수"
+        overall_detail = "단기 변동 가능성이 있습니다. 분산 관리 권장."
+    else:
+        overall = "✅ 안정적 — 특이 신호 없음"
+        overall_detail = "현재 전략을 유지하되 정기적 모니터링을 권장합니다."
+
+    sp_line = ""
+    if show_benchmark and not benchmark_data.empty:
+        sp_cum_r = float(calc_cumulative_return(benchmark_data["Close"]).iloc[-1])
+        alpha = cum_return - sp_cum_r
+        sp_line = f"- **벤치마크(S&P500) 대비 알파:** {alpha:+.1f}%p ({cum_return:+.1f}% vs {sp_cum_r:+.1f}%)"
+
+    report_text = f"""**{info_r.get('name', main_ticker)} ({main_ticker}) 투자 분석 리포트**
+분석 기준일: {analysis_date} | 분석 기간: {period_label}
+
+---
+
+**📌 종합 판단: {overall}**
+{overall_detail}
+
+---
+
+**📊 핵심 지표 요약**
+- **현재가:** {price_str} (전일 대비 {daily_change:+.2f}%)
+- **기간 누적 수익률:** {cum_return:+.1f}% (연환산 {ann_return:+.1f}%)
+- **연환산 변동성:** {volatility:.1f}%
+- **샤프 비율:** {sharpe:.2f} ({'우수' if sharpe >= 2 else '양호' if sharpe >= 1 else '검토 필요'})
+- **최대 낙폭(MDD):** {mdd:.1f}%
+{sp_line}
+
+---
+
+**🔍 주요 기술적 신호**
+{chr(10).join(f"- [{p}] {t}: {s}" for _, p, t, s, _ in insights if p in ("High", "Medium"))}
+
+---
+
+**🎯 핵심 행동 제안**
+{chr(10).join(f"- {a}" for _, p, _, _, a in insights if p == "High") or "- 현재 High 등급 신호 없음"}
+
+---
+*본 리포트는 Skills/insight.md 규칙 기반으로 자동 생성되었습니다. 투자 판단은 본인 책임입니다.*
+"""
+    st.markdown(report_text)
+
+    # 리포트 다운로드
+    st.download_button(
+        label="📥 리포트 다운로드 (.txt)",
+        data=report_text.replace("**", "").replace("---", "─" * 40),
+        file_name=f"{main_ticker}_report_{pd.Timestamp.now().strftime('%Y%m%d')}.txt",
+        mime="text/plain",
+    )
