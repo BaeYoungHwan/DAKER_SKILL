@@ -9,6 +9,13 @@ import streamlit as st
 from typing import Optional
 
 
+def _flatten_columns(data: pd.DataFrame) -> pd.DataFrame:
+    """MultiIndex 컬럼 평탄화 (yfinance >= 0.2.x 대응)"""
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+    return data
+
+
 # 기간 선택 기준 (Skills/analysis.md §1)
 VALID_PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"]
 DEFAULT_PERIOD = "1y"
@@ -26,8 +33,7 @@ def fetch_price(ticker: str, period: str = DEFAULT_PERIOD) -> pd.DataFrame:
         return pd.DataFrame()
 
     # MultiIndex 컬럼 평탄화 (yfinance >= 0.2.x 대응)
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
+    data = _flatten_columns(data)
 
     # 결측값 처리: forward fill (Skills/analysis.md §4)
     data = data.ffill()
@@ -76,6 +82,20 @@ def fetch_market_indices(period: str = DEFAULT_PERIOD) -> dict[str, pd.DataFrame
         "DOW JONES": "^DJI",
     }
     return fetch_multiple(list(indices.values()), period)
+
+
+@st.cache_data(ttl=3600)
+def fetch_exchange_rate_series(from_currency: str = "USD", to_currency: str = "KRW", period: str = DEFAULT_PERIOD) -> pd.Series:
+    """환율 시계열 조회 (예: USDKRW=X). 원화 환산 포트폴리오 비교에 사용."""
+    try:
+        ticker = f"{from_currency}{to_currency}=X"
+        data = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+        if data.empty:
+            return pd.Series(dtype=float)
+        data = _flatten_columns(data)
+        return data["Close"].ffill()
+    except Exception:
+        return pd.Series(dtype=float)
 
 
 def get_close_prices(data_dict: dict[str, pd.DataFrame]) -> pd.DataFrame:

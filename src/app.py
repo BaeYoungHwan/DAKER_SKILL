@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import streamlit as st
 import pandas as pd
 
-from data.fetcher import fetch_price, fetch_info, fetch_multiple, get_close_prices, VALID_PERIODS
+from data.fetcher import fetch_price, fetch_info, fetch_multiple, get_close_prices, fetch_exchange_rate_series, VALID_PERIODS
 from analysis.indicators import (
     calc_returns, calc_cumulative_return, calc_annualized_return,
     calc_moving_averages, calc_rsi, calc_bollinger_bands,
@@ -59,7 +59,17 @@ with st.sidebar:
     st.subheader("차트 옵션")
     show_ma = st.multiselect("이동평균선", ["MA5", "MA20", "MA60", "MA120", "MA200"], default=["MA20", "MA60"])
     show_bb = st.checkbox("볼린저 밴드", value=True)
-    show_benchmark = st.checkbox("S&P500 벤치마크 비교", value=True)
+
+    BENCHMARK_OPTIONS = {
+        "S&P500": "^GSPC",
+        "KOSPI": "^KS11",
+        "NASDAQ": "^IXIC",
+        "DOW JONES": "^DJI",
+        "없음": None,
+    }
+    benchmark_name = st.selectbox("벤치마크 선택", options=list(BENCHMARK_OPTIONS.keys()), index=0)
+    benchmark_ticker = BENCHMARK_OPTIONS[benchmark_name]
+    show_benchmark = benchmark_ticker is not None
 
     st.divider()
     st.subheader("포트폴리오 비중 (%)")
@@ -85,7 +95,7 @@ if not tickers:
 with st.spinner("데이터 로딩 중..."):
     all_data = fetch_multiple(tickers, period)
     info_data = {t: fetch_info(t) for t in tickers}
-    benchmark_data = fetch_price("^GSPC", period) if show_benchmark else pd.DataFrame()
+    benchmark_data = fetch_price(benchmark_ticker, period) if show_benchmark else pd.DataFrame()
 
 if not all_data:
     st.error("데이터를 불러올 수 없습니다. 티커를 확인해주세요.")
@@ -181,6 +191,27 @@ with tab_portfolio:
     if not valid_weights:
         valid_weights = {t: 100 / len(all_data) for t in all_data}
 
+    # 혼합 통화 감지 (Q4: KRW + USD 혼합 포트폴리오 환율 지원)
+    currencies = {t: info_data.get(t, {}).get("currency", "USD") for t in all_data}
+    has_krw = any(c == "KRW" for c in currencies.values())
+    has_usd = any(c == "USD" for c in currencies.values())
+    is_mixed = has_krw and has_usd
+
+    use_fx = False
+    fx_series = pd.Series(dtype=float)
+    if is_mixed:
+        st.info("🌐 **혼합 통화 포트폴리오** 감지 (KRW + USD). 원화 환산 시 USDKRW 환율을 자동 적용합니다.")
+        use_fx = st.checkbox("원화 환산 통합 보기 (USDKRW 환율 적용)", value=False)
+        if use_fx:
+            with st.spinner("환율 데이터 로딩 중..."):
+                fx_series = fetch_exchange_rate_series("USD", "KRW", period)
+            if not fx_series.empty:
+                current_rate = float(fx_series.iloc[-1])
+                st.caption(f"현재 환율: 1 USD = ₩{current_rate:,.0f} (출처: Yahoo Finance USDKRW=X)")
+            else:
+                st.warning("환율 데이터를 불러오지 못했습니다. % 기준으로 비교합니다.")
+                use_fx = False
+
     col_pie, col_stats = st.columns([1, 1])
 
     with col_pie:
@@ -208,16 +239,28 @@ with tab_portfolio:
         close_prices = get_close_prices(all_data)
         total_w_sum = sum(valid_weights.values())
         if total_w_sum > 0:
+            # 원화 환산 모드: USD 종목 가격을 KRW로 변환 후 수익률 계산
+            if use_fx and not fx_series.empty:
+                close_for_port = close_prices.copy()
+                for t in close_for_port.columns:
+                    if currencies.get(t, "USD") == "USD":
+                        fx_aligned = fx_series.reindex(close_for_port.index, method="ffill")
+                        close_for_port[t] = close_for_port[t] * fx_aligned
+                chart_suffix = " (원화 환산)"
+            else:
+                close_for_port = close_prices
+                chart_suffix = ""
+
             port_return = sum(
-                calc_cumulative_return(close_prices[t]) * (valid_weights.get(t, 0) / total_w_sum)
-                for t in close_prices.columns if t in valid_weights
+                calc_cumulative_return(close_for_port[t]) * (valid_weights.get(t, 0) / total_w_sum)
+                for t in close_for_port.columns if t in valid_weights
             )
-            st.subheader("포트폴리오 가중 누적 수익률")
+            st.subheader(f"포트폴리오 가중 누적 수익률{chart_suffix}")
             port_df = pd.DataFrame({"포트폴리오": port_return})
             if not benchmark_data.empty:
-                port_df["S&P500"] = calc_cumulative_return(benchmark_data["Close"])
+                port_df[benchmark_name] = calc_cumulative_return(benchmark_data["Close"])
             st.plotly_chart(
-                line_chart_multi(port_df, "포트폴리오 vs 벤치마크", normalize=False),
+                line_chart_multi(port_df, f"포트폴리오 vs {benchmark_name}{chart_suffix}", normalize=False),
                 width="stretch",
             )
 
@@ -237,7 +280,7 @@ with tab_compare:
     # 벤치마크 포함 비교
     compare_df = close_prices.copy()
     if show_benchmark and not benchmark_data.empty:
-        compare_df["S&P500"] = benchmark_data["Close"]
+        compare_df[benchmark_name] = benchmark_data["Close"]
 
     st.plotly_chart(
         line_chart_multi(compare_df, "누적 수익률 비교 (기간 시작점 = 0%)"),
@@ -249,10 +292,10 @@ with tab_compare:
     period_returns = []
     compare_tickers = list(all_data.keys())
     if show_benchmark and not benchmark_data.empty:
-        compare_tickers.append("S&P500")
+        compare_tickers.append(benchmark_name)
 
     for t in compare_tickers:
-        if t == "S&P500":
+        if t == benchmark_name and t not in all_data:
             c = benchmark_data["Close"] if not benchmark_data.empty else None
         else:
             c = all_data[t]["Close"] if t in all_data else None
@@ -332,14 +375,14 @@ with tab_insight:
     elif mdd < -20:
         insights.append(("🟡", "Medium", "주의 낙폭 기록", f"MDD = {mdd:.1f}% (기준: <-20%)", "포트폴리오 리밸런싱 검토 권장."))
 
-    # S&P500 대비 성과
+    # 벤치마크 대비 성과
     if show_benchmark and not benchmark_data.empty:
         sp_cum = float(calc_cumulative_return(benchmark_data["Close"]).iloc[-1])
         diff = cum_return - sp_cum
         if diff > 10:
-            insights.append(("🟢", "Medium", f"S&P500 대비 초과 수익 ({diff:+.1f}%p)", f"종목: {cum_return:+.1f}% vs S&P500: {sp_cum:+.1f}%", "시장 대비 우수한 성과. 전략 유지."))
+            insights.append(("🟢", "Medium", f"{benchmark_name} 대비 초과 수익 ({diff:+.1f}%p)", f"종목: {cum_return:+.1f}% vs {benchmark_name}: {sp_cum:+.1f}%", "시장 대비 우수한 성과. 전략 유지."))
         elif diff < -10:
-            insights.append(("🟡", "Medium", f"S&P500 대비 저조한 성과 ({diff:+.1f}%p)", f"종목: {cum_return:+.1f}% vs S&P500: {sp_cum:+.1f}%", "인덱스 ETF 편입 비교 검토 권장."))
+            insights.append(("🟡", "Medium", f"{benchmark_name} 대비 저조한 성과 ({diff:+.1f}%p)", f"종목: {cum_return:+.1f}% vs {benchmark_name}: {sp_cum:+.1f}%", "인덱스 ETF 편입 비교 검토 권장."))
 
     # 우선순위 정렬 및 출력
     priority_order = {"High": 0, "Medium": 1, "Info": 2}
@@ -384,7 +427,7 @@ with tab_insight:
     if show_benchmark and not benchmark_data.empty:
         sp_cum_r = float(calc_cumulative_return(benchmark_data["Close"]).iloc[-1])
         alpha = cum_return - sp_cum_r
-        sp_line = f"- **벤치마크(S&P500) 대비 알파:** {alpha:+.1f}%p ({cum_return:+.1f}% vs {sp_cum_r:+.1f}%)"
+        sp_line = f"- **벤치마크({benchmark_name}) 대비 알파:** {alpha:+.1f}%p ({cum_return:+.1f}% vs {sp_cum_r:+.1f}%)"
 
     report_text = f"""**{info_r.get('name', main_ticker)} ({main_ticker}) 투자 분석 리포트**
 분석 기준일: {analysis_date} | 분석 기간: {period_label}
