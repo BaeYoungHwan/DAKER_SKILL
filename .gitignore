@@ -1,0 +1,36 @@
+# 환경 변수 & 시크릿
+.env
+.env.local
+.env.production
+.env.development
+config/secrets.*
+# .env.example 은 템플릿이므로 커밋 허용
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# Node
+node_modules/
+.next/
+dist/
+
+# 로그
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/sessions/
