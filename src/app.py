@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import streamlit as st
 import pandas as pd
 
-from data.fetcher import fetch_price, fetch_info, fetch_multiple, get_close_prices, fetch_exchange_rate_series, VALID_PERIODS
+from data.fetcher import fetch_price, fetch_info, fetch_multiple, get_close_prices, fetch_exchange_rate_series, search_ticker, VALID_PERIODS
 from analysis.indicators import (
     calc_returns, calc_cumulative_return, calc_annualized_return,
     calc_moving_averages, calc_rsi, calc_bollinger_bands,
@@ -36,12 +36,56 @@ with st.sidebar:
     st.divider()
 
     st.subheader("종목 설정")
-    tickers_input = st.text_input(
-        "티커 입력 (쉼표 구분)",
-        value="AAPL, MSFT, GOOGL",
-        help="예: AAPL, MSFT, 005930.KS (삼성전자), SPY (S&P500 ETF)",
-    )
-    tickers = [t.strip().upper() for t in tickers_input.split(",") if t.strip()]
+
+    # ── Session state 초기화
+    if "selected_tickers" not in st.session_state:
+        st.session_state.selected_tickers = ["AAPL", "MSFT", "GOOGL"]
+    if "ticker_names" not in st.session_state:
+        st.session_state.ticker_names = {}
+
+    # ── 종목 검색
+    search_q = st.text_input("🔍 종목 검색", placeholder="예: 삼성전자, Apple, Samsung, TSLA")
+    if search_q:
+        results = search_ticker(search_q)
+        if results:
+            opts = {f"{r.get('shortname', r['symbol'])} [{r['symbol']}]": r for r in results}
+            chosen_label = st.selectbox("검색 결과", list(opts.keys()))
+            if st.button("+ 추가"):
+                r = opts[chosen_label]
+                t = r["symbol"]
+                if t not in st.session_state.selected_tickers:
+                    st.session_state.selected_tickers.append(t)
+                    st.session_state.ticker_names[t] = r.get("shortname", t)
+                st.rerun()
+        else:
+            st.caption("검색 결과 없음")
+
+    # ── 직접 티커 입력 (power user용)
+    with st.expander("직접 티커 입력"):
+        manual = st.text_input("티커 (쉼표 구분)", placeholder="005930.KS, AAPL")
+        if st.button("추가", key="manual_add"):
+            for t in [x.strip().upper() for x in manual.split(",") if x.strip()]:
+                if t not in st.session_state.selected_tickers:
+                    st.session_state.selected_tickers.append(t)
+            st.rerun()
+
+    # ── 선택된 종목 목록
+    if st.session_state.selected_tickers:
+        st.caption("선택된 종목")
+        to_remove = []
+        for t in list(st.session_state.selected_tickers):
+            col1, col2 = st.columns([5, 1])
+            label = st.session_state.ticker_names.get(t, "")
+            col1.markdown(f"**{t}** {label}")
+            if col2.button("×", key=f"rm_{t}"):
+                to_remove.append(t)
+        for t in to_remove:
+            st.session_state.selected_tickers.remove(t)
+            st.session_state.ticker_names.pop(t, None)
+        if to_remove:
+            st.rerun()
+
+    tickers = st.session_state.selected_tickers
 
     period = st.selectbox(
         "분석 기간",
