@@ -43,8 +43,8 @@
 ### 🚀 배포
 - [x] requirements.txt 최신화 확인 (충분)
 - [x] .env / watchlist.json gitignore 확인 (포함됨)
-- [ ] .streamlit/config.toml 커밋 (Streamlit Cloud 테마 설정 필요)
-- [ ] Streamlit Cloud 배포
+- [x] .streamlit/config.toml 커밋 (TradingView Dark 테마 설정 포함)
+- [x] Streamlit Cloud 배포 (https://dakerskills.streamlit.app)
 - [ ] 기획서 PDF 작성 (README 포함)
 
 ## 완료
