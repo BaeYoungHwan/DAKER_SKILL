@@ -1,6 +1,9 @@
 """
 Plotly 차트 컴포넌트 모듈
 Skills/visualization.md 시각화 선택 기준 준수
+
+색상 상수(COLOR_UP, CHART_BGCOLOR 등)는 Skills/visualization.md 에서 런타임에 로드됩니다.
+색상을 변경하려면 코드가 아닌 Skills/visualization.md 의 테이블만 수정하세요.
 """
 
 import plotly.graph_objects as go
@@ -9,20 +12,36 @@ from plotly.subplots import make_subplots
 import pandas as pd
 from typing import Optional
 
+from skills.parser import load_visualization_config, load_analysis_config
 
-# 색상 규칙 (Skills/visualization.md §6 테마 토큰 기준)
-COLOR_UP = "#26a69a"
-COLOR_DOWN = "#ef5350"
-COLOR_NEUTRAL = "#7B68EE"
-COLOR_MA = {"MA5": "#FFD700", "MA20": "#FFA500", "MA60": "#4FC3F7", "MA120": "#CE93D8", "MA200": "#80CBC4"}
-COLOR_BB = "rgba(123, 104, 238, 0.2)"
 
-# 차트 다크 테마 상수
-CHART_BGCOLOR = "#131722"
-CHART_PAPER_BGCOLOR = "#1E222D"
-CHART_FONT_COLOR = "#D1D4DC"
-CHART_GRID_COLOR = "#2A2E39"
-CHART_FONT_FAMILY = "Inter, -apple-system, sans-serif"
+def _vcfg() -> dict:
+    """Skills/visualization.md 파싱 결과 반환"""
+    return load_visualization_config()
+
+
+def _acfg() -> dict:
+    """Skills/analysis.md 파싱 결과 반환"""
+    return load_analysis_config()
+
+
+# 색상 상수 — Skills/visualization.md §6 에서 로드, 파싱 실패 시 기본값 사용
+def _c(key: str, default: str) -> str:
+    return _vcfg().get(key, default)
+
+
+# 모듈 수준 상수 (하위 호환성 유지 + Skills 파일 로드)
+COLOR_UP      = _c("COLOR_UP",      "#26a69a")
+COLOR_DOWN    = _c("COLOR_DOWN",    "#ef5350")
+COLOR_NEUTRAL = _c("COLOR_NEUTRAL", "#7B68EE")
+COLOR_MA      = _vcfg().get("COLOR_MA", {"MA5": "#FFD700", "MA20": "#FFA500", "MA60": "#4FC3F7", "MA120": "#CE93D8", "MA200": "#80CBC4"})
+COLOR_BB      = "rgba(123, 104, 238, 0.2)"
+
+CHART_BGCOLOR       = _c("CHART_BGCOLOR",       "#131722")
+CHART_PAPER_BGCOLOR = _c("CHART_PAPER_BGCOLOR", "#1E222D")
+CHART_FONT_COLOR    = _c("CHART_FONT_COLOR",    "#D1D4DC")
+CHART_GRID_COLOR    = _c("CHART_GRID_COLOR",    "#2A2E39")
+CHART_FONT_FAMILY   = "Inter, -apple-system, sans-serif"
 
 
 def candlestick_chart(
@@ -214,11 +233,16 @@ def correlation_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
 
 
 def rsi_gauge_chart(rsi_value: float, ticker: str) -> go.Figure:
-    """RSI 게이지 차트 (반원 속도계 스타일)"""
-    if rsi_value > 70:
+    """RSI 게이지 차트 (반원 속도계 스타일 — 임계치는 Skills/analysis.md 에서 로드)"""
+    cfg = _acfg()
+    ob = cfg["rsi_overbought"]   # 과매수 기준 (기본 70)
+    os_ = cfg["rsi_oversold"]    # 과매도 기준 (기본 30)
+    period = cfg["rsi_period"]
+
+    if rsi_value > ob:
         bar_color = COLOR_DOWN
         label = "과매수"
-    elif rsi_value < 30:
+    elif rsi_value < os_:
         bar_color = COLOR_UP
         label = "과매도"
     else:
@@ -229,24 +253,24 @@ def rsi_gauge_chart(rsi_value: float, ticker: str) -> go.Figure:
         mode="gauge+number",
         value=rsi_value,
         domain={"x": [0, 1], "y": [0, 1]},
-        title={"text": f"RSI (14) — <b>{label}</b>", "font": {"size": 14, "color": CHART_FONT_COLOR}},
+        title={"text": f"RSI ({period}) — <b>{label}</b>", "font": {"size": 14, "color": CHART_FONT_COLOR}},
         number={"font": {"size": 36, "color": bar_color}, "valueformat": ".1f"},
         gauge={
             "axis": {
                 "range": [0, 100],
                 "tickwidth": 1,
                 "tickcolor": "#787B86",
-                "tickvals": [0, 30, 50, 70, 100],
-                "ticktext": ["0", "30", "50", "70", "100"],
+                "tickvals": [0, os_, 50, ob, 100],
+                "ticktext": ["0", str(os_), "50", str(ob), "100"],
                 "tickfont": {"size": 11, "color": CHART_FONT_COLOR},
             },
             "bar": {"color": bar_color, "thickness": 0.3},
             "bgcolor": CHART_PAPER_BGCOLOR,
             "borderwidth": 0,
             "steps": [
-                {"range": [0, 30], "color": "rgba(38, 166, 154, 0.18)"},
-                {"range": [30, 70], "color": "rgba(200, 200, 200, 0.12)"},
-                {"range": [70, 100], "color": "rgba(239, 83, 80, 0.18)"},
+                {"range": [0, os_], "color": "rgba(38, 166, 154, 0.18)"},
+                {"range": [os_, ob], "color": "rgba(200, 200, 200, 0.12)"},
+                {"range": [ob, 100], "color": "rgba(239, 83, 80, 0.18)"},
             ],
             "threshold": {
                 "line": {"color": bar_color, "width": 4},

@@ -50,6 +50,10 @@ from viz.charts import (
     stochastic_chart, earnings_chart, rolling_sharpe_chart, sector_heatmap,
     financials_chart, dividend_chart,
 )
+from skills.parser import load_analysis_config, load_insight_rules
+
+# Skills/analysis.md 에서 임계치 로드 — 파일 수정 시 앱 재시작으로 자동 반영
+_ACFG = load_analysis_config()
 
 # ── 페이지 설정 ──────────────────────────────────────────────
 st.set_page_config(
@@ -403,9 +407,9 @@ if not all_data:
 # ── 데이터 품질 검증 (analysis.md §4)
 _data_warnings = []
 for _t, _df in all_data.items():
-    # 최소 30일 데이터 요건
-    if len(_df) < 30:
-        _data_warnings.append(f"⚠️ **{_t}**: 데이터 {len(_df)}일치 — 지표 계산에 최소 30일 필요.")
+    # 최소 데이터 요건 (Skills/analysis.md §4 — min_data_days)
+    if len(_df) < _ACFG["min_data_days"]:
+        _data_warnings.append(f"⚠️ **{_t}**: 데이터 {len(_df)}일치 — 지표 계산에 최소 {_ACFG['min_data_days']}일 필요.")
     # 이상치 감지: 일별 수익률 ±10% 초과
     _ret = _df["Close"].pct_change() * 100
     _outliers = _ret[_ret.abs() > 10].dropna()
@@ -533,7 +537,7 @@ with tab_main:
     col1.metric("현재가", price_str, f"{daily_change:+.2f}%")
     col2.metric("누적 수익률", f"{cum_return:+.1f}%", help=f"연환산: {ann_return:+.1f}%")
     col3.metric("연환산 변동성", f"{volatility:.1f}%")
-    col4.metric("샤프 비율", f"{sharpe:.2f}", help="≥2: 우수 / ≥1: 양호 / <1: 검토")
+    col4.metric("샤프 비율", f"{sharpe:.2f}", help=f"≥{_ACFG['sharpe_excellent']}: 우수 / ≥{_ACFG['sharpe_good']}: 양호 / <{_ACFG['sharpe_good']}: 검토")
     col5.metric("최대 낙폭(MDD)", f"{mdd:.1f}%")
 
     # ── 재무 지표 보조 행
@@ -805,7 +809,7 @@ with tab_portfolio:
     wt_cls = "pos" if weighted_total >= 0 else "neg"
     bs_cls = "pos" if best_val >= 0 else "neg"
     ws_cls = "pos" if worst_val >= 0 else "neg"
-    sp_cls = "pos" if avg_sharpe >= 1 else ("neg" if avg_sharpe < 0 else "neu")
+    sp_cls = "pos" if avg_sharpe >= _ACFG["sharpe_good"] else ("neg" if avg_sharpe < 0 else "neu")
 
     st.markdown(f"""
     <div class="port-kpi-strip">
@@ -827,7 +831,7 @@ with tab_portfolio:
         <div class="port-kpi-card">
             <div class="pk-label">평균 샤프 비율</div>
             <div class="pk-value {sp_cls}">{avg_sharpe:.2f}</div>
-            <div class="pk-sub">{'우수' if avg_sharpe >= 2 else '양호' if avg_sharpe >= 1 else '검토 필요'}</div>
+            <div class="pk-sub">{'우수' if avg_sharpe >= _ACFG["sharpe_excellent"] else '양호' if avg_sharpe >= _ACFG["sharpe_good"] else '검토 필요'}</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -862,23 +866,26 @@ with tab_portfolio:
     # ── 포트폴리오 리스크 경고 (analysis.md §3.2, §3.3)
     port_warnings = []
 
-    # 자산 집중도 >30% 경고
+    # 자산 집중도 경고 (Skills/analysis.md §3.3 — asset_concentration_threshold)
+    _asset_thr = _ACFG["asset_concentration_threshold"]
     for t, w in valid_weights.items():
         w_pct = w / total_w_sum * 100
-        if w_pct > 30:
-            port_warnings.append(("down", f"⚠️ 자산 집중 위험 — **{t}** 비중 {w_pct:.1f}% (기준: >30%). 분산 투자를 권장합니다."))
+        if w_pct > _asset_thr:
+            port_warnings.append(("down", f"⚠️ 자산 집중 위험 — **{t}** 비중 {w_pct:.1f}% (기준: >{_asset_thr:.0f}%). 분산 투자를 권장합니다."))
 
-    # 섹터 집중도 >40% 경고
+    # 섹터 집중도 경고 (Skills/analysis.md §3.3 — sector_concentration_threshold)
+    _sector_thr = _ACFG["sector_concentration_threshold"]
     sector_weights: dict[str, float] = {}
     for t, w in valid_weights.items():
         sector = info_data.get(t, {}).get("sector", "기타") or "기타"
         sector_weights[sector] = sector_weights.get(sector, 0) + w
     for sector, sw in sector_weights.items():
         sw_pct = sw / total_w_sum * 100
-        if sw_pct > 40:
-            port_warnings.append(("down", f"⚠️ 섹터 집중 위험 — **{sector}** 섹터 비중 {sw_pct:.1f}% (기준: >40%)."))
+        if sw_pct > _sector_thr:
+            port_warnings.append(("down", f"⚠️ 섹터 집중 위험 — **{sector}** 섹터 비중 {sw_pct:.1f}% (기준: >{_sector_thr:.0f}%)."))
 
-    # 고상관 자산 경고 (>0.8)
+    # 고상관 자산 경고 (Skills/analysis.md §3.2 — correlation_threshold)
+    _corr_thr = _ACFG["correlation_threshold"]
     if len(all_data) >= 2:
         close_prices = get_close_prices(all_data)
         corr_matrix = calc_correlation_matrix(close_prices)
@@ -888,8 +895,8 @@ with tab_portfolio:
                 t1, t2 = tickers_list[i], tickers_list[j]
                 if t1 in corr_matrix.index and t2 in corr_matrix.columns:
                     corr_val = corr_matrix.loc[t1, t2]
-                    if corr_val > 0.8:
-                        port_warnings.append(("warn", f"🔗 고상관 자산 쌍 — **{t1} & {t2}** 상관계수 {corr_val:.2f} (기준: >0.8). 실질 분산 효과 낮음."))
+                    if corr_val > _corr_thr:
+                        port_warnings.append(("warn", f"🔗 고상관 자산 쌍 — **{t1} & {t2}** 상관계수 {corr_val:.2f} (기준: >{_corr_thr}). 실질 분산 효과 낮음."))
 
     # 리밸런싱 신호: 균등 비중 대비 현재 설정 비중 ±5% 초과
     n = len(valid_weights)
@@ -1158,9 +1165,11 @@ with tab_insight:
         hist_t = macd_t["histogram"].dropna()
 
         signals = []
-        if rsi_t < 30:
+        _ob = _ACFG["rsi_overbought"]
+        _os = _ACFG["rsi_oversold"]
+        if rsi_t < _os:
             signals.append("🟢 RSI 과매도")
-        elif rsi_t > 70:
+        elif rsi_t > _ob:
             signals.append("🔴 RSI 과매수")
 
         if gc_t and (c_t.index[-1] - gc_t).days <= 30:
@@ -1213,12 +1222,17 @@ with tab_insight:
     # RSI 신호
     latest_rsi = float(rsi_values.dropna().iloc[-1])
     rsi_signal = get_rsi_signal(latest_rsi)
+    _rsi_ob = _ACFG["rsi_overbought"]
+    _rsi_os = _ACFG["rsi_oversold"]
+    # 인사이트 메시지는 Skills/insight.md 에서 로드 (규칙 변경 시 .md만 수정)
+    _insight_rules = {r["condition_raw"]: r for r in load_insight_rules()}
     if rsi_signal == "과매수":
-        insights.append(("high", "🔴", "High", "과매수 구간 진입 (RSI)", f"RSI = {latest_rsi:.1f} (기준: >70)", "단기간 급등으로 매수 세력 과열 상태. 평균 회귀 가능성 증가.", "단기 차익실현 고려. 포지션 축소 검토."))
+        _rule = _insight_rules.get(f"RSI > {_rsi_ob}", {})
+        insights.append(("high", "🔴", "High", "과매수 구간 진입 (RSI)", f"RSI = {latest_rsi:.1f} (기준: >{_rsi_ob})", "단기간 급등으로 매수 세력 과열 상태. 평균 회귀 가능성 증가.", "단기 차익실현 고려. 포지션 축소 검토."))
     elif rsi_signal == "과매도":
-        insights.append(("high", "🟢", "High", "과매도 구간 진입 (RSI)", f"RSI = {latest_rsi:.1f} (기준: <30)", "과도한 매도 압력으로 저평가 구간 진입. 반등 가능성 있음.", "저점 매수 기회 탐색. 분할 매수 고려."))
+        insights.append(("high", "🟢", "High", "과매도 구간 진입 (RSI)", f"RSI = {latest_rsi:.1f} (기준: <{_rsi_os})", "과도한 매도 압력으로 저평가 구간 진입. 반등 가능성 있음.", "저점 매수 기회 탐색. 분할 매수 고려."))
     else:
-        insights.append(("info", "🔵", "Info", "RSI 중립 구간", f"RSI = {latest_rsi:.1f} (30~70)", "매수/매도 세력 균형 상태. 뚜렷한 방향성 없음.", "특이 신호 없음. 추세 방향 확인 권장."))
+        insights.append(("info", "🔵", "Info", "RSI 중립 구간", f"RSI = {latest_rsi:.1f} ({_rsi_os}~{_rsi_ob})", "매수/매도 세력 균형 상태. 뚜렷한 방향성 없음.", "특이 신호 없음. 추세 방향 확인 권장."))
 
     # 골든크로스 / 데드크로스
     mas_all = calc_moving_averages(close)

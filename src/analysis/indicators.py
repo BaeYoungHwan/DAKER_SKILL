@@ -1,11 +1,22 @@
 """
 투자 기술적 지표 계산 모듈
 Skills/analysis.md §2 지표 계산 규칙 준수
+
+임계치(RSI 30/70, 샤프비율 1/2, 연환산 거래일 252 등)는
+skills.parser.load_analysis_config() 에서 런타임에 로드됩니다.
+Skills/analysis.md 수정 시 코드 변경 없이 자동 반영됩니다.
 """
 
 import pandas as pd
 import numpy as np
 from typing import Optional
+
+from skills.parser import load_analysis_config
+
+
+def _cfg() -> dict:
+    """Skills/analysis.md 파싱 결과 반환 (lru_cache 로 1회만 파싱)"""
+    return load_analysis_config()
 
 
 def calc_returns(prices: pd.Series) -> pd.Series:
@@ -28,18 +39,15 @@ def calc_annualized_return(prices: pd.Series) -> float:
 
 
 def calc_moving_averages(prices: pd.Series) -> dict[str, pd.Series]:
-    """이동평균선 계산 (Skills/analysis.md §2.2)"""
-    return {
-        "MA5": prices.rolling(5).mean(),
-        "MA20": prices.rolling(20).mean(),
-        "MA60": prices.rolling(60).mean(),
-        "MA120": prices.rolling(120).mean(),
-        "MA200": prices.rolling(200).mean(),
-    }
+    """이동평균선 계산 (Skills/analysis.md §2.2 — 기간은 Skills 파일에서 로드)"""
+    periods = _cfg()["ma_periods"]
+    return {f"MA{p}": prices.rolling(p).mean() for p in periods}
 
 
-def calc_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
-    """RSI 계산 (Skills/analysis.md §2.3)"""
+def calc_rsi(prices: pd.Series, period: int | None = None) -> pd.Series:
+    """RSI 계산 (Skills/analysis.md §2.3 — 기간은 Skills 파일에서 로드)"""
+    if period is None:
+        period = _cfg()["rsi_period"]
     delta = prices.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -52,8 +60,12 @@ def calc_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
     return rsi
 
 
-def calc_bollinger_bands(prices: pd.Series, period: int = 20, std_dev: float = 2.0) -> dict[str, pd.Series]:
-    """볼린저 밴드 계산 (Skills/analysis.md §2.4)"""
+def calc_bollinger_bands(prices: pd.Series, period: int | None = None, std_dev: float | None = None) -> dict[str, pd.Series]:
+    """볼린저 밴드 계산 (Skills/analysis.md §2.4 — 기간·표준편차는 Skills 파일에서 로드)"""
+    if period is None:
+        period = _cfg()["bb_period"]
+    if std_dev is None:
+        std_dev = _cfg()["bb_std"]
     middle = prices.rolling(period).mean()
     std = prices.rolling(period).std()
     return {
@@ -65,18 +77,21 @@ def calc_bollinger_bands(prices: pd.Series, period: int = 20, std_dev: float = 2
 
 
 def calc_volatility(prices: pd.Series) -> dict[str, float]:
-    """변동성 계산 (Skills/analysis.md §2.5)"""
+    """변동성 계산 (Skills/analysis.md §2.5 — 거래일수는 Skills 파일에서 로드)"""
+    trading_days = _cfg()["trading_days"]
     daily_returns = prices.pct_change().dropna()
     daily_vol = daily_returns.std() * 100
-    annual_vol = daily_vol * np.sqrt(252)
+    annual_vol = daily_vol * np.sqrt(trading_days)
     return {
         "daily_volatility": round(daily_vol, 2),
         "annual_volatility": round(annual_vol, 2),
     }
 
 
-def calc_sharpe_ratio(prices: pd.Series, risk_free_rate: float = 0.035) -> float:
-    """샤프 비율 계산 (Skills/analysis.md §2.6)"""
+def calc_sharpe_ratio(prices: pd.Series, risk_free_rate: float | None = None) -> float:
+    """샤프 비율 계산 (Skills/analysis.md §2.6 — 무위험 수익률은 Skills 파일에서 로드)"""
+    if risk_free_rate is None:
+        risk_free_rate = _cfg()["risk_free_rate"]
     daily_returns = prices.pct_change().dropna()
     annual_return = calc_annualized_return(prices) / 100
     annual_vol = calc_volatility(prices)["annual_volatility"] / 100
@@ -107,10 +122,11 @@ def calc_correlation_matrix(close_prices: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_rsi_signal(rsi_value: float) -> str:
-    """RSI 신호 판단 (Skills/analysis.md §2.3)"""
-    if rsi_value > 70:
+    """RSI 신호 판단 (Skills/analysis.md §2.3 — 임계치는 Skills 파일에서 로드)"""
+    cfg = _cfg()
+    if rsi_value > cfg["rsi_overbought"]:
         return "과매수"
-    elif rsi_value < 30:
+    elif rsi_value < cfg["rsi_oversold"]:
         return "과매도"
     return "중립"
 
@@ -184,14 +200,17 @@ def calc_momentum(prices: pd.Series) -> dict:
     return result
 
 
-def calc_rolling_sharpe(prices: pd.Series, window: int = 60, risk_free_rate: float = 0.035) -> pd.Series:
-    """롤링 샤프 비율 계산 (trailing window 기준)"""
+def calc_rolling_sharpe(prices: pd.Series, window: int = 60, risk_free_rate: float | None = None) -> pd.Series:
+    """롤링 샤프 비율 계산 (trailing window 기준 — 무위험 수익률은 Skills 파일에서 로드)"""
+    if risk_free_rate is None:
+        risk_free_rate = _cfg()["risk_free_rate"]
+    trading_days = _cfg()["trading_days"]
     daily_returns = prices.pct_change()
-    daily_rf = risk_free_rate / 252
+    daily_rf = risk_free_rate / trading_days
     excess = daily_returns - daily_rf
     rolling_mean = excess.rolling(window).mean()
     rolling_std = daily_returns.rolling(window).std()
-    sharpe = (rolling_mean / rolling_std.replace(0, np.nan)) * np.sqrt(252)
+    sharpe = (rolling_mean / rolling_std.replace(0, np.nan)) * np.sqrt(trading_days)
     return sharpe.round(2)
 
 
