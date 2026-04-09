@@ -406,23 +406,24 @@ if not all_data:
 
 # ── 데이터 품질 검증 (analysis.md §4)
 _data_warnings = []
+_outlier_threshold = _ACFG["outlier_pct_threshold"]  # Skills/analysis.md §4 — 기본 15%
 for _t, _df in all_data.items():
     # 최소 데이터 요건 (Skills/analysis.md §4 — min_data_days)
     if len(_df) < _ACFG["min_data_days"]:
         _data_warnings.append(f"⚠️ **{_t}**: 데이터 {len(_df)}일치 — 지표 계산에 최소 {_ACFG['min_data_days']}일 필요.")
-    # 이상치 감지: 일별 수익률 ±10% 초과
+    # 이상치 감지: 일별 수익률 ±outlier_pct_threshold% 초과 (Skills/analysis.md §4)
     _ret = _df["Close"].pct_change() * 100
-    _outliers = _ret[_ret.abs() > 10].dropna()
+    _outliers = _ret[_ret.abs() > _outlier_threshold].dropna()
     if not _outliers.empty:
-        for _date, _val in _outliers.items():
-            _data_warnings.append(f"🚨 **{_t}** 이상치 감지 — {_date.strftime('%Y-%m-%d')}: 일별 수익률 {_val:+.1f}% (±10% 초과, yfinance 검증 권장)")
-    # 누적 수익률 >150% 인 경우 추가 안내
-    _cum = (_df["Close"].iloc[-1] / _df["Close"].iloc[0] - 1) * 100
-    if abs(_cum) > 150:
-        _data_warnings.append(f"ℹ️ **{_t}** 누적 수익률 {_cum:+.1f}% — yfinance auto_adjust 배당 조정 포함값입니다. 실제 주가 흐름과 다를 수 있으니 원본 데이터를 확인하세요.")
+        _shown = list(_outliers.items())[:3]  # 종목당 최대 3건만 표시
+        for _date, _val in _shown:
+            _data_warnings.append(f"🚨 **{_t}** 이상치 감지 — {_date.strftime('%Y-%m-%d')}: 일별 수익률 {_val:+.1f}% (±{_outlier_threshold:.0f}% 초과)")
+        _remaining = len(_outliers) - len(_shown)
+        if _remaining > 0:
+            _data_warnings.append(f"ℹ️ **{_t}** 이상치 외 {_remaining}건 더 있음 (yfinance 데이터 자동 보정 적용 중)")
 
 if _data_warnings:
-    with st.expander(f"⚠️ 데이터 품질 알림 {len(_data_warnings)}건", expanded=True):
+    with st.expander(f"⚠️ 데이터 품질 알림 {len(_data_warnings)}건", expanded=False):
         for _w in _data_warnings:
             st.warning(_w)
 
@@ -432,7 +433,13 @@ if main_ticker not in all_data:
 main_df = all_data[main_ticker]
 close = main_df["Close"]
 
-currency = info_data.get(main_ticker, {}).get("currency", "USD")
+# 한국 주식(.KS/.KQ)은 yfinance currency 반환이 불안정하므로 티커 접미사로 보완
+def _detect_currency(ticker: str, info: dict) -> str:
+    if ticker.endswith(".KS") or ticker.endswith(".KQ"):
+        return "KRW"
+    return info.get("currency", "USD")
+
+currency = _detect_currency(main_ticker, info_data.get(main_ticker, {}))
 currency_sym = "₩" if currency == "KRW" else ("¥" if currency == "JPY" else "$")
 
 # ── KPI 계산 ─────────────────────────────────────────────────
@@ -874,15 +881,21 @@ with tab_portfolio:
             port_warnings.append(("down", f"⚠️ 자산 집중 위험 — **{t}** 비중 {w_pct:.1f}% (기준: >{_asset_thr:.0f}%). 분산 투자를 권장합니다."))
 
     # 섹터 집중도 경고 (Skills/analysis.md §3.3 — sector_concentration_threshold)
+    # N/A·미분류 섹터는 집중도 계산에서 제외 (한국 주식은 yfinance 섹터 미지원)
     _sector_thr = _ACFG["sector_concentration_threshold"]
     sector_weights: dict[str, float] = {}
+    _invalid_sectors = {"N/A", "n/a", "", None, "기타"}
     for t, w in valid_weights.items():
-        sector = info_data.get(t, {}).get("sector", "기타") or "기타"
+        sector = info_data.get(t, {}).get("sector", None)
+        if not sector or sector in _invalid_sectors:
+            continue
         sector_weights[sector] = sector_weights.get(sector, 0) + w
-    for sector, sw in sector_weights.items():
-        sw_pct = sw / total_w_sum * 100
-        if sw_pct > _sector_thr:
-            port_warnings.append(("down", f"⚠️ 섹터 집중 위험 — **{sector}** 섹터 비중 {sw_pct:.1f}% (기준: >{_sector_thr:.0f}%)."))
+    if sector_weights:
+        _known_w_sum = sum(sector_weights.values())
+        for sector, sw in sector_weights.items():
+            sw_pct = sw / _known_w_sum * 100
+            if sw_pct > _sector_thr:
+                port_warnings.append(("down", f"⚠️ 섹터 집중 위험 — **{sector}** 섹터 비중 {sw_pct:.1f}% (기준: >{_sector_thr:.0f}%)."))
 
     # 고상관 자산 경고 (Skills/analysis.md §3.2 — correlation_threshold)
     _corr_thr = _ACFG["correlation_threshold"]
@@ -921,8 +934,8 @@ with tab_portfolio:
     else:
         st.success("✅ 자산 집중도 및 분산도 양호 — 특이 리스크 신호 없음.")
 
-    # 혼합 통화 감지
-    currencies = {t: info_data.get(t, {}).get("currency", "USD") for t in all_data}
+    # 혼합 통화 감지 (한국 주식 티커 접미사로 보완)
+    currencies = {t: _detect_currency(t, info_data.get(t, {})) for t in all_data}
     has_krw = any(c == "KRW" for c in currencies.values())
     has_usd = any(c == "USD" for c in currencies.values())
     is_mixed = has_krw and has_usd
@@ -953,9 +966,12 @@ with tab_portfolio:
         for t in all_data:
             c = all_data[t]["Close"]
             beta_val = calc_beta(c, benchmark_data["Close"]) if show_benchmark and not benchmark_data.empty else None
+            _t_currency = _detect_currency(t, info_data.get(t, {}))
+            _price_val = float(c.iloc[-1])
+            _price_fmt = f"₩{_price_val:,.0f}" if _t_currency == "KRW" else (f"${_price_val:,.0f}" if _price_val >= 1000 else f"${_price_val:.2f}")
             row = {
                 "종목": t,
-                "현재가": f"{float(c.iloc[-1]):.2f}",
+                "현재가": _price_fmt,
                 "누적수익률(%)": f"{float(calc_cumulative_return(c).iloc[-1]):+.1f}",
                 "변동성(%)": f"{calc_volatility(c)['annual_volatility']:.1f}",
                 "샤프": f"{calc_sharpe_ratio(c):.2f}",
@@ -1074,7 +1090,7 @@ with tab_compare:
 
         styled = (
             ret_df.style
-            .applymap(_color_ret, subset=ret_cols)
+            .map(_color_ret, subset=ret_cols)
             .format(_fmt_ret, subset=ret_cols)
         )
         st.dataframe(styled, use_container_width=True)
@@ -1209,7 +1225,7 @@ with tab_insight:
             if "🟡" in str(val): return "color: #f7dc6f"
             return ""
 
-        styled_sc = sc_df.style.applymap(_color_signal, subset=["신호"])
+        styled_sc = sc_df.style.map(_color_signal, subset=["신호"])
         st.dataframe(styled_sc, use_container_width=True)
 
     st.divider()
