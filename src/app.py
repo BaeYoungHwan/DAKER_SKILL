@@ -43,6 +43,14 @@ with st.sidebar:
     if "ticker_names" not in st.session_state:
         st.session_state.ticker_names = {}
 
+    # ── URL 파라미터로 초기 종목 설정 (예: ?tickers=005930.KS,000660.KS)
+    if "tickers" in st.query_params and not st.session_state.get("_params_loaded"):
+        raw = st.query_params["tickers"]
+        for t in [x.strip().upper() for x in raw.split(",") if x.strip()]:
+            if t not in st.session_state.selected_tickers:
+                st.session_state.selected_tickers.append(t)
+        st.session_state["_params_loaded"] = True
+
     # ── 종목 검색
     search_q = st.text_input("🔍 종목 검색", placeholder="예: 삼성전자, Apple, Samsung, TSLA")
     if search_q:
