@@ -94,6 +94,13 @@ st.markdown(f"""
     --up:          {viz_cfg.get('token_up', '#26A69A')};
     --down:        {viz_cfg.get('token_down', '#EF5350')};
     --neutral:     {viz_cfg.get('token_neutral', '#7B68EE')};
+    --warning:     {viz_cfg.get('token_warning', '#FFA726')};
+    --bg-danger:   {viz_cfg.get('token_bg_danger', '#2D1B1B')};
+    --bg-warning:  {viz_cfg.get('token_bg_warning', '#2D2617')};
+    --bg-info:     {viz_cfg.get('token_bg_info', '#1A2635')};
+    --up-muted:    {viz_cfg.get('token_up_muted', '#80CBC4')};
+    --down-muted:  {viz_cfg.get('token_down_muted', '#EF9A9A')};
+    --signal:      {viz_cfg.get('token_signal', '#F7DC6F')};
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -230,7 +237,7 @@ section[data-testid="stSidebar"] h3 { color: var(--text-bright) !important; }
 .range-curr { font-size: 13px; font-weight: 800; color: var(--text-bright); font-family: 'JetBrains Mono', monospace; }
 .range-high { font-size: 12px; color: var(--up); font-weight: 600; font-family: 'JetBrains Mono', monospace; }
 .range-track {
-    background: linear-gradient(90deg, var(--down) 0%, #FFA726 50%, var(--up) 100%);
+    background: linear-gradient(90deg, var(--down) 0%, var(--warning) 50%, var(--up) 100%);
     border-radius: 4px; height: 6px; position: relative; margin: 6px 0;
 }
 .range-dot {
@@ -257,17 +264,17 @@ section[data-testid="stSidebar"] h3 { color: var(--text-bright) !important; }
 
 /* ── 인사이트 카드 */
 .ins-high {
-    background: #2D1B1B; border: 1px solid rgba(239,83,80,.25);
+    background: var(--bg-danger); border: 1px solid rgba(239,83,80,.25);
     border-left: 4px solid var(--down); border-radius: 10px;
     padding: 16px 20px; margin-bottom: 12px;
 }
 .ins-medium {
-    background: #2D2617; border: 1px solid rgba(255,167,38,.25);
-    border-left: 4px solid #FFA726; border-radius: 10px;
+    background: var(--bg-warning); border: 1px solid rgba(255,167,38,.25);
+    border-left: 4px solid var(--warning); border-radius: 10px;
     padding: 16px 20px; margin-bottom: 12px;
 }
 .ins-info {
-    background: #1A2635; border: 1px solid rgba(41,98,255,.25);
+    background: var(--bg-info); border: 1px solid rgba(41,98,255,.25);
     border-left: 4px solid var(--accent); border-radius: 10px;
     padding: 16px 20px; margin-bottom: 12px;
 }
@@ -296,7 +303,7 @@ hr { border-color: var(--border) !important; }
 
 # ── 사이드바 ─────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown('<h2 style="color:#e6edf3;margin:0">📈 투자 대시보드</h2>', unsafe_allow_html=True)
+    st.markdown(f'<h2 style="color:{viz_cfg.get("token_text_bright","#e6edf3")};margin:0">📈 투자 대시보드</h2>', unsafe_allow_html=True)
     st.divider()
 
     st.subheader("종목 설정")
@@ -363,7 +370,7 @@ with st.sidebar:
         for t in list(st.session_state.selected_tickers):
             col1, col2 = st.columns(viz_cfg.get('layout_ticker_row', [5, 1]))
             label = st.session_state.ticker_names.get(t, "")
-            col1.markdown(f"**{t}** <span style='color:#787B86;font-size:11px'>{label}</span>", unsafe_allow_html=True)
+            col1.markdown(f"**{t}** <span style='color:{viz_cfg.get('token_text_sub','#787B86')};font-size:11px'>{label}</span>", unsafe_allow_html=True)
             if col2.button("×", key=f"rm_{t}", help=f"{t} 제거"):
                 to_remove.append(t)
         for t in to_remove:
@@ -480,7 +487,7 @@ if market_overview:
     mkt_html = '<div class="mkt-strip">'
     for name, data in market_overview.items():
         chg = data["change"]
-        top_color = "#26a69a" if chg >= 0 else "#ef5350"
+        top_color = viz_cfg.get('token_up', '#26a69a') if chg >= 0 else viz_cfg.get('token_down', '#ef5350')
         arrow = "▲" if chg >= 0 else "▼"
         chg_class = "mk-chg-pos" if chg >= 0 else "mk-chg-neg"
         price = data["price"]
@@ -497,28 +504,33 @@ if market_overview:
 # ── 공포/탐욕 지수 카드 ───────────────────────────────────────
 fg = fetch_fear_greed()
 fg_score = fg["score"]
+_c_up      = viz_cfg.get('token_up', '#26a69a')
+_c_down    = viz_cfg.get('token_down', '#ef5350')
+_c_sub     = viz_cfg.get('token_text_sub', '#787B86')
+_c_up_m    = viz_cfg.get('token_up_muted', '#80CBC4')
+_c_down_m  = viz_cfg.get('token_down_muted', '#EF9A9A')
 if fg_score >= 75:
-    fg_color = "#26a69a"
+    fg_color = _c_up
     fg_bg = "rgba(38,166,154,0.1)"
 elif fg_score >= 55:
-    fg_color = "#80cbc4"
+    fg_color = _c_up_m
     fg_bg = "rgba(128,203,196,0.08)"
 elif fg_score >= 45:
-    fg_color = "#787B86"
+    fg_color = _c_sub
     fg_bg = "rgba(120,123,134,0.08)"
 elif fg_score >= 25:
-    fg_color = "#ef9a9a"
+    fg_color = _c_down_m
     fg_bg = "rgba(239,154,154,0.1)"
 else:
-    fg_color = "#ef5350"
+    fg_color = _c_down
     fg_bg = "rgba(239,83,80,0.12)"
 
 st.markdown(f"""
 <div style="display:flex; align-items:center; gap:16px; padding:10px 16px; margin-bottom:8px;
             background:{fg_bg}; border-radius:8px; border:1px solid {fg_color}33;">
-    <div style="font-size:13px; color:#787B86; white-space:nowrap;">공포/탐욕 지수</div>
-    <div style="flex:1; height:8px; background:#2A2E39; border-radius:4px; overflow:hidden;">
-        <div style="height:100%; width:{fg_score}%; background:linear-gradient(90deg,#ef5350,#787B86,#26a69a); border-radius:4px;"></div>
+    <div style="font-size:13px; color:{viz_cfg.get('token_text_sub','#787B86')}; white-space:nowrap;">공포/탐욕 지수</div>
+    <div style="flex:1; height:8px; background:{viz_cfg.get('token_border','#2A2E39')}; border-radius:4px; overflow:hidden;">
+        <div style="height:100%; width:{fg_score}%; background:linear-gradient(90deg,{viz_cfg.get('token_down','#ef5350')},{viz_cfg.get('token_text_sub','#787B86')},{viz_cfg.get('token_up','#26a69a')}); border-radius:4px;"></div>
     </div>
     <div style="font-size:20px; font-weight:700; color:{fg_color}; font-family:'JetBrains Mono',monospace; white-space:nowrap;">
         {fg_score:.0f} <span style="font-size:13px; font-weight:400;">{fg["label"]}</span>
@@ -664,7 +676,7 @@ with tab_main:
     st.markdown('<div class="sec-header"><span>⚡ RSI (상대강도지수)</span></div>', unsafe_allow_html=True)
     rsi_values = calc_rsi(close)
     latest_rsi = float(rsi_values.dropna().iloc[-1])
-    col_gauge, col_rsi = st.columns([1, 2])
+    col_gauge, col_rsi = st.columns(viz_cfg.get('layout_gauge_rsi', [1, 2]))
     with col_gauge:
         st.plotly_chart(rsi_gauge_chart(latest_rsi, main_ticker), use_container_width=True)
     with col_rsi:
@@ -690,7 +702,7 @@ with tab_main:
     div_series = fetch_dividends(main_ticker)
     if not div_series.empty:
         st.markdown('<div class="sec-header"><span>💰 배당금 히스토리</span></div>', unsafe_allow_html=True)
-        col_d1, col_d2 = st.columns([3, 1])
+        col_d1, col_d2 = st.columns(viz_cfg.get('layout_dividend_chart', [3, 1]))
         with col_d1:
             st.plotly_chart(dividend_chart(div_series, main_ticker), use_container_width=True)
         with col_d2:
@@ -743,7 +755,7 @@ with tab_main:
     st.markdown('<div class="sec-header"><span>🏦 기관 수급 현황</span></div>', unsafe_allow_html=True)
     holders_data = fetch_institutional_holders(main_ticker)
     if holders_data:
-        hc1, hc2 = st.columns([1, 2])
+        hc1, hc2 = st.columns(viz_cfg.get('layout_holders_detail', [1, 2]))
         with hc1:
             if "major" in holders_data:
                 st.caption("**주요 보유 비중**")
@@ -751,8 +763,8 @@ with tab_main:
                     if val is not None and label:
                         try:
                             v = float(str(val).replace("%", ""))
-                            st.markdown(f"<span style='color:#787B86;font-size:12px'>{label}</span> "
-                                        f"<span style='font-weight:700;color:#D1D4DC'>{v:.1f}%</span>",
+                            st.markdown(f"<span style='color:{viz_cfg.get('token_text_sub','#787B86')};font-size:12px'>{label}</span> "
+                                        f"<span style='font-weight:700;color:{viz_cfg.get('token_text','#D1D4DC')}'>{v:.1f}%</span>",
                                         unsafe_allow_html=True)
                         except Exception:
                             pass
@@ -776,7 +788,7 @@ with tab_main:
             date = f" · {item['pub_time']}" if item['pub_time'] else ""
             st.markdown(
                 f"• [{item['title']}]({item['url']})"
-                f"<span style='font-size:11px;color:#787B86'>{pub}{date}</span>",
+                f"<span style='font-size:11px;color:{viz_cfg.get('token_text_sub','#787B86')}'>{pub}{date}</span>",
                 unsafe_allow_html=True,
             )
     else:
@@ -1160,9 +1172,9 @@ with tab_compare:
                 return ""
             if isinstance(val, (int, float)):
                 if val > 0:
-                    return "color: #26a69a; font-weight: bold"
+                    return f"color: {viz_cfg.get('token_up','#26a69a')}; font-weight: bold"
                 elif val < 0:
-                    return "color: #ef5350; font-weight: bold"
+                    return f"color: {viz_cfg.get('token_down','#ef5350')}; font-weight: bold"
             return ""
 
         def _fmt_ret(val):
@@ -1268,10 +1280,10 @@ with tab_insight:
             st.caption("**백테스트 성과**")
             metrics_bt = bt_result["metrics"]
             for k, v in metrics_bt.items():
-                color = "#26a69a" if isinstance(v, (int, float)) and v > 0 else "#ef5350" if isinstance(v, (int, float)) and v < 0 else "#D1D4DC"
+                color = viz_cfg.get('token_up','#26a69a') if isinstance(v, (int, float)) and v > 0 else viz_cfg.get('token_down','#ef5350') if isinstance(v, (int, float)) and v < 0 else viz_cfg.get('token_text','#D1D4DC')
                 st.markdown(
                     f"<div style='display:flex;justify-content:space-between;padding:2px 0'>"
-                    f"<span style='color:#787B86;font-size:12px'>{k}</span>"
+                    f"<span style='color:{viz_cfg.get('token_text_sub','#787B86')};font-size:12px'>{k}</span>"
                     f"<span style='color:{color};font-weight:700;font-size:13px'>{v}</span>"
                     f"</div>",
                     unsafe_allow_html=True,
@@ -1327,9 +1339,9 @@ with tab_insight:
         sc_df = pd.DataFrame(screener_rows).set_index("종목")
 
         def _color_signal(val):
-            if "🟢" in str(val): return "color: #26a69a"
-            if "🔴" in str(val): return "color: #ef5350"
-            if "🟡" in str(val): return "color: #f7dc6f"
+            if "🟢" in str(val): return f"color: {viz_cfg.get('token_up','#26a69a')}"
+            if "🔴" in str(val): return f"color: {viz_cfg.get('token_down','#ef5350')}"
+            if "🟡" in str(val): return f"color: {viz_cfg.get('token_signal','#f7dc6f')}"
             return ""
 
         styled_sc = sc_df.style.map(_color_signal, subset=["신호"])

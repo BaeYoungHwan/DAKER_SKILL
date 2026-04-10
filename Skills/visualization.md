@@ -107,6 +107,13 @@
 | `--up` | `#26a69a` | 상승·긍정·매수 |
 | `--down` | `#ef5350` | 하락·부정·매도 |
 | `--neutral` | `#7B68EE` | 중립·정보 |
+| `--warning` | `#FFA726` | 경고·Medium 인사이트 (주황) |
+| `--bg-danger` | `#2D1B1B` | High 인사이트 카드 배경 |
+| `--bg-warning` | `#2D2617` | Medium 인사이트 카드 배경 |
+| `--bg-info` | `#1A2635` | Info 인사이트 카드 배경 |
+| `--up-muted` | `#80CBC4` | 탐욕(완화) 색상 |
+| `--down-muted` | `#EF9A9A` | 공포(완화) 색상 |
+| `--signal` | `#F7DC6F` | 신호 표시 색상 (노랑) |
 
 ### 차트 색상 상수 (src/viz/charts.py)
 
@@ -135,3 +142,6 @@
 |-------------|---------|---------|
 | `main_chart` | `2` | `1` |
 | `ticker_row` | `5` | `1` |
+| `gauge_rsi` | `1` | `2` |
+| `dividend_chart` | `3` | `1` |
+| `holders_detail` | `1` | `2` |
