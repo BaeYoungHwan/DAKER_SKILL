@@ -474,3 +474,83 @@ def get_close_prices(data_dict: dict[str, pd.DataFrame]) -> pd.DataFrame:
         if not df.empty and "Close" in df.columns:
             closes[ticker] = df["Close"]
     return pd.DataFrame(closes)
+
+
+def fetch_next_earnings(ticker: str) -> dict:
+    """다음 실적 발표일 및 과거 실적일 반환"""
+    try:
+        t = yf.Ticker(ticker)
+        df = t.earnings_dates
+        if df is None or df.empty:
+            return {}
+        now = pd.Timestamp.now(tz="UTC")
+        # tz-aware 인덱스 처리
+        if df.index.tz is None:
+            df.index = df.index.tz_localize("UTC")
+        future = df[df.index > now].sort_index()
+        past = df[df.index <= now].sort_index()
+        result = {}
+        if not future.empty:
+            next_date = future.index[0]
+            result["next_date"] = next_date.strftime("%Y-%m-%d")
+            result["days_until"] = (next_date - now).days
+        if not past.empty:
+            last_date = past.index[-1]
+            result["last_date"] = last_date.strftime("%Y-%m-%d")
+            row = past.iloc[-1]
+            result["last_eps_estimate"] = row.get("EPS Estimate", None)
+            result["last_eps_actual"] = row.get("Reported EPS", None)
+        return result
+    except Exception:
+        return {}
+
+
+def fetch_institutional_holders(ticker: str) -> dict:
+    """기관 투자자 보유 비중 반환"""
+    try:
+        t = yf.Ticker(ticker)
+        major = t.major_holders
+        inst = t.institutional_holders
+        result = {}
+        if major is not None and not major.empty:
+            # major_holders: 행=비율값, 열=[0(값), 1(레이블)]
+            rows = {}
+            for _, row in major.iterrows():
+                val = row.iloc[0] if len(row) > 0 else None
+                label = row.iloc[1] if len(row) > 1 else ""
+                rows[str(label)] = val
+            result["major"] = rows
+        if inst is not None and not inst.empty:
+            inst = inst.copy()
+            # 상위 10개 기관만
+            if "% Out" in inst.columns:
+                inst = inst.sort_values("% Out", ascending=False).head(10)
+            result["institutional"] = inst.to_dict("records")
+        return result
+    except Exception:
+        return {}
+
+
+def fetch_macro_data(period: str = "1y") -> dict:
+    """매크로 지표 데이터 — yfinance 기반 (API Key 불필요)
+    반환: USD/KRW 환율, 미국 10년물 국채 수익률, 달러인덱스(DX-Y.NYB)
+    """
+    symbols = {
+        "USD/KRW": "USDKRW=X",
+        "10년물 국채(%)": "^TNX",
+        "달러인덱스": "DX-Y.NYB",
+    }
+    result = {}
+    for label, sym in symbols.items():
+        try:
+            df = yf.download(sym, period=period, auto_adjust=True, progress=False)
+            if df is None or df.empty:
+                continue
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            result[label] = df["Close"].dropna()
+        except Exception:
+            continue
+    return result

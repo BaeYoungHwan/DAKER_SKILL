@@ -34,6 +34,7 @@ from data.fetcher import (
     fetch_exchange_rate_series, search_ticker, VALID_PERIODS,
     fetch_market_overview, fetch_news, fetch_earnings, fetch_fear_greed,
     fetch_financials, fetch_dividends,
+    fetch_next_earnings, fetch_institutional_holders, fetch_macro_data,
 )
 from analysis.indicators import (
     calc_returns, calc_cumulative_return, calc_annualized_return,
@@ -41,14 +42,14 @@ from analysis.indicators import (
     calc_volatility, calc_sharpe_ratio, calc_max_drawdown,
     calc_drawdown_series, calc_correlation_matrix, get_rsi_signal,
     detect_golden_cross, calc_52week_range, calc_macd, calc_beta, calc_momentum,
-    calc_stochastic, calc_rolling_sharpe,
+    calc_stochastic, calc_rolling_sharpe, run_backtest,
 )
 from viz.charts import (
     candlestick_chart, line_chart_multi,
     portfolio_pie, correlation_heatmap, rsi_chart,
     rsi_gauge_chart, macd_chart, drawdown_chart, risk_return_scatter,
     stochastic_chart, earnings_chart, rolling_sharpe_chart, sector_heatmap,
-    financials_chart, dividend_chart,
+    financials_chart, dividend_chart, backtest_chart, macro_chart,
 )
 from skills.parser import load_analysis_config, load_insight_rules
 
@@ -696,6 +697,59 @@ with tab_main:
                     if abs(div_growth) <= 50:
                         st.metric("배당 성장률", f"{div_growth:+.1f}%")
 
+    # ── 실적 캘린더
+    st.markdown('<div class="sec-header"><span>📅 실적 캘린더</span></div>', unsafe_allow_html=True)
+    next_earn = fetch_next_earnings(main_ticker)
+    if next_earn:
+        ec1, ec2, ec3 = st.columns(3)
+        if "next_date" in next_earn:
+            days_u = next_earn["days_until"]
+            with ec1:
+                delta_str = f"{days_u}일 후" if days_u >= 0 else f"{-days_u}일 전"
+                st.metric("다음 실적 발표일", next_earn["next_date"], delta_str)
+            if days_u <= 14:
+                st.warning(f"⚠️ {days_u}일 후 실적 발표 예정 — 발표 전 변동성 확대 가능성")
+        if "last_date" in next_earn:
+            with ec2:
+                st.metric("직전 실적 발표일", next_earn["last_date"])
+        if next_earn.get("last_eps_estimate") and next_earn.get("last_eps_actual"):
+            surprise_pct = (next_earn["last_eps_actual"] - next_earn["last_eps_estimate"]) / abs(next_earn["last_eps_estimate"]) * 100
+            surprise_color = "normal" if surprise_pct >= 0 else "inverse"
+            with ec3:
+                st.metric("EPS 서프라이즈", f"{surprise_pct:+.1f}%",
+                          f"예상 {next_earn['last_eps_estimate']:.2f} → 실제 {next_earn['last_eps_actual']:.2f}",
+                          delta_color=surprise_color)
+    else:
+        st.caption("실적 일정을 불러올 수 없습니다.")
+
+    # ── 수급 데이터
+    st.markdown('<div class="sec-header"><span>🏦 기관 수급 현황</span></div>', unsafe_allow_html=True)
+    holders_data = fetch_institutional_holders(main_ticker)
+    if holders_data:
+        hc1, hc2 = st.columns([1, 2])
+        with hc1:
+            if "major" in holders_data:
+                st.caption("**주요 보유 비중**")
+                for label, val in holders_data["major"].items():
+                    if val is not None and label:
+                        try:
+                            v = float(str(val).replace("%", ""))
+                            st.markdown(f"<span style='color:#787B86;font-size:12px'>{label}</span> "
+                                        f"<span style='font-weight:700;color:#D1D4DC'>{v:.1f}%</span>",
+                                        unsafe_allow_html=True)
+                        except Exception:
+                            pass
+        with hc2:
+            if "institutional" in holders_data and holders_data["institutional"]:
+                inst_df = pd.DataFrame(holders_data["institutional"])
+                if "Holder" in inst_df.columns and "% Out" in inst_df.columns:
+                    inst_df = inst_df[["Holder", "% Out", "Shares"]].head(8)
+                    inst_df.columns = ["기관명", "보유비중(%)", "보유주식수"]
+                    st.caption("**상위 기관 보유 현황**")
+                    st.dataframe(inst_df, use_container_width=True, hide_index=True)
+    else:
+        st.caption("수급 데이터를 불러올 수 없습니다.")
+
     # ── 뉴스 피드
     st.markdown('<div class="sec-header"><span>📰 최신 뉴스</span></div>', unsafe_allow_html=True)
     news_items = fetch_news(main_ticker)
@@ -1165,13 +1219,72 @@ with tab_compare:
 # 탭 4: 투자 인사이트
 # ══════════════════════════════════════════════════════════════
 with tab_insight:
+    # ── 백테스트
+    st.markdown('<div class="sec-header"><span>🔬 전략 백테스트</span></div>', unsafe_allow_html=True)
+    st.caption("과거 데이터 기반 전략 수익률 시뮬레이션 — yfinance 히스토리 활용")
+
+    bt_col1, bt_col2 = st.columns([1, 3])
+    with bt_col1:
+        bt_strategy = st.selectbox(
+            "전략 선택",
+            ["ma_cross", "rsi_reversal"],
+            format_func=lambda x: "MA 크로스 (MA20/MA60)" if x == "ma_cross" else "RSI 반전 (30/70)",
+        )
+        bt_capital = st.number_input("초기 자본 (만원)", value=1000, min_value=100, step=100) * 10000
+
+    bt_result = run_backtest(close, strategy=bt_strategy, initial_capital=bt_capital)
+
+    if bt_result:
+        with bt_col1:
+            st.divider()
+            st.caption("**백테스트 성과**")
+            metrics_bt = bt_result["metrics"]
+            for k, v in metrics_bt.items():
+                color = "#26a69a" if isinstance(v, (int, float)) and v > 0 else "#ef5350" if isinstance(v, (int, float)) and v < 0 else "#D1D4DC"
+                st.markdown(
+                    f"<div style='display:flex;justify-content:space-between;padding:2px 0'>"
+                    f"<span style='color:#787B86;font-size:12px'>{k}</span>"
+                    f"<span style='color:{color};font-weight:700;font-size:13px'>{v}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+        with bt_col2:
+            strategy_name = "MA 크로스" if bt_strategy == "ma_cross" else "RSI 반전"
+            st.plotly_chart(
+                backtest_chart(bt_result["portfolio"], bt_result["benchmark"], strategy_name),
+                use_container_width=True,
+            )
+            if bt_result["trades"]:
+                with st.expander(f"📋 거래 내역 ({len(bt_result['trades'])}건)"):
+                    trades_df = pd.DataFrame(bt_result["trades"])
+                    st.dataframe(trades_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("데이터가 부족합니다 (최소 70거래일 필요). 분석 기간을 늘려주세요.")
+
+    st.divider()
+
+    # ── 매크로 지표
+    st.markdown('<div class="sec-header"><span>🌐 매크로 지표</span></div>', unsafe_allow_html=True)
+    st.caption("USD/KRW 환율, 미국 10년물 국채, 달러인덱스 추이")
+    with st.spinner("매크로 데이터 로딩 중..."):
+        macro_period_map = {"1mo": "1mo", "3mo": "3mo", "6mo": "6mo", "1y": "1y", "2y": "2y", "5y": "5y"}
+        macro_d = fetch_macro_data(macro_period_map.get(period, "1y"))
+    if macro_d:
+        st.plotly_chart(macro_chart(macro_d), use_container_width=True)
+    else:
+        st.caption("매크로 데이터를 불러올 수 없습니다.")
+
+    st.divider()
+
     # ── 종목 스크리너
     st.markdown('<div class="sec-header"><span>📡 종목 스크리너</span></div>', unsafe_allow_html=True)
     st.caption("선택된 모든 종목의 기술적 신호를 한눈에 스캔")
 
     screener_rows = []
     for t in all_data:
-        c_t = all_data[t]["Close"]
+        df_t = all_data[t]
+        c_t = df_t["Close"]
         rsi_t = float(calc_rsi(c_t).dropna().iloc[-1])
         mas_t = calc_moving_averages(c_t)
         gc_t = detect_golden_cross(mas_t["MA20"], mas_t["MA60"])
@@ -1206,6 +1319,26 @@ with tab_insight:
                 signals.append("🟢 MACD↑")
             elif float(hist_t.iloc[-1]) < 0 and float(hist_t.iloc[-2]) >= 0:
                 signals.append("🔴 MACD↓")
+
+        # 52주 신고가 돌파
+        _52w = calc_52week_range(c_t)
+        if last_p_t >= _52w["high_52"] * 0.99:
+            signals.append("🚀 52주 신고가")
+
+        # 거래량 급증 (오늘 거래량 vs 20일 평균)
+        if "Volume" in df_t.columns:
+            vol_t = df_t["Volume"].dropna()
+            if len(vol_t) >= 21:
+                avg_vol = float(vol_t.iloc[-21:-1].mean())
+                cur_vol = float(vol_t.iloc[-1])
+                if avg_vol > 0 and cur_vol >= avg_vol * 2:
+                    vol_ratio = cur_vol / avg_vol
+                    signals.append(f"📈 거래량 {vol_ratio:.1f}배↑")
+
+        # PER 저평가 + RSI 과매도 복합 신호
+        per_t = info_data.get(t, {}).get("pe_ratio")
+        if per_t and 0 < float(per_t) < 15 and rsi_t < 40:
+            signals.append(f"💎 저PER({per_t:.0f})+저RSI")
 
         screener_rows.append({
             "종목": t,

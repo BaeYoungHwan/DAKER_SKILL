@@ -617,3 +617,88 @@ def dividend_chart(dividends: "pd.Series", ticker: str) -> go.Figure:
         yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR, title="배당금 ($)"),
     )
     return fig
+
+
+def backtest_chart(
+    portfolio: pd.Series,
+    benchmark: pd.Series,
+    strategy_label: str = "전략",
+) -> go.Figure:
+    """백테스트 결과 — 전략 vs Buy&Hold 누적 수익률 비교 차트"""
+    initial = float(portfolio.iloc[0])
+    port_pct = (portfolio / initial - 1) * 100
+    bench_pct = (benchmark / float(benchmark.iloc[0]) - 1) * 100
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=port_pct.index, y=port_pct,
+        name=strategy_label,
+        line=dict(color=COLOR_UP, width=2),
+        fill="tozeroy",
+        fillcolor="rgba(38,166,154,0.08)",
+    ))
+    fig.add_trace(go.Scatter(
+        x=bench_pct.index, y=bench_pct,
+        name="Buy & Hold",
+        line=dict(color="#FFA500", width=1.5, dash="dash"),
+    ))
+    fig.add_hline(y=0, line_color=CHART_GRID_COLOR, line_width=1)
+    fig.update_layout(
+        title=dict(text=f"{strategy_label} 백테스트 결과", font=dict(color=CHART_FONT_COLOR, size=14)),
+        xaxis_title="날짜",
+        yaxis_title="누적 수익률 (%)",
+        yaxis_tickformat=".1f",
+        template="plotly_dark",
+        height=380,
+        margin=dict(l=0, r=0, t=40, b=0),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        paper_bgcolor=CHART_PAPER_BGCOLOR,
+        plot_bgcolor=CHART_BGCOLOR,
+        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
+        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
+        yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
+    )
+    return fig
+
+
+def macro_chart(macro_data: dict) -> go.Figure:
+    """매크로 지표 멀티 차트 (USD/KRW, 10년물 국채, 달러인덱스)"""
+    labels = list(macro_data.keys())
+    n = len(labels)
+    if n == 0:
+        return go.Figure()
+
+    colors = [COLOR_UP, "#FFA500", COLOR_NEUTRAL, "#ef5350"]
+    fig = make_subplots(
+        rows=n, cols=1,
+        shared_xaxes=True,
+        subplot_titles=labels,
+        vertical_spacing=0.08,
+    )
+    for i, (label, series) in enumerate(macro_data.items(), start=1):
+        pct = (series / float(series.iloc[0]) - 1) * 100
+        fig.add_trace(go.Scatter(
+            x=pct.index, y=pct,
+            name=label,
+            line=dict(color=colors[(i - 1) % len(colors)], width=1.5),
+            showlegend=True,
+        ), row=i, col=1)
+        fig.update_yaxes(
+            title_text="변화율(%)",
+            gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR,
+            row=i, col=1,
+        )
+
+    fig.update_layout(
+        title="매크로 지표 추이 (기준일 대비 변화율)",
+        template="plotly_dark",
+        height=120 * n + 60,
+        margin=dict(l=0, r=0, t=50, b=0),
+        hovermode="x unified",
+        paper_bgcolor=CHART_PAPER_BGCOLOR,
+        plot_bgcolor=CHART_BGCOLOR,
+        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
+        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
+    )
+    return fig
