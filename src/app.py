@@ -33,7 +33,7 @@ from data.fetcher import (
     fetch_price, fetch_info, fetch_multiple, get_close_prices,
     fetch_exchange_rate_series, search_ticker, VALID_PERIODS,
     fetch_market_overview, fetch_news, fetch_earnings, fetch_fear_greed,
-    fetch_financials, fetch_dividends,
+    fetch_financials, fetch_dividends, classify_position,
 )
 try:
     from data.fetcher import fetch_next_earnings, fetch_institutional_holders, fetch_macro_data
@@ -786,6 +786,20 @@ with tab_main:
 with tab_portfolio:
     st.subheader("포트폴리오 분석")
 
+    # ── 레버리지·인버스 ETF 경고 (종목 추가 시 자동 감지)
+    _lev_warnings = []
+    for _t in tickers:
+        if _t not in all_data:
+            continue
+        _info_name = st.session_state.ticker_names.get(_t, "")
+        _cls = classify_position(_t, _info_name)
+        if _cls["warning"]:
+            _lev_warnings.append(_cls["warning"])
+    if _lev_warnings:
+        with st.expander("⚠️ 특수 포지션 유의 사항", expanded=True):
+            for _w in _lev_warnings:
+                st.warning(_w)
+
     # ── 비중 설정 (인라인)
     with st.expander("⚖️ 포트폴리오 비중 설정", expanded=False):
         weights_input = {}
@@ -813,43 +827,59 @@ with tab_portfolio:
 
     # ── 매입가/수량 입력 (선택사항 — 평가손익 계산용)
     with st.expander("💰 매입가/수량 입력 (평가손익 계산)", expanded=False):
-        st.caption("입력하지 않으면 수익률 기반 분석만 표시됩니다.")
+        st.caption(
+            "입력하지 않으면 수익률 기반 분석만 표시됩니다. "
+            "**공매도(숏)**는 수량을 음수로 입력하세요 (예: -100)."
+        )
         _h_cols = st.columns(min(len(tickers), 3))
         for _i, _t in enumerate(tickers):
             if _t not in all_data:
                 continue
             with _h_cols[_i % len(_h_cols)]:
-                st.markdown(f"**{_t}**")
+                _cls_pos = classify_position(_t, st.session_state.ticker_names.get(_t, ""))
+                _label = f"**{_t}**"
+                if _cls_pos["inverse"]:
+                    _label += " ↓ 인버스"
+                elif _cls_pos["leveraged"]:
+                    _label += " ⚡ 레버리지"
+                st.markdown(_label)
                 _prev_h = st.session_state.holdings.get(_t, {})
                 _avg = st.number_input(
                     "평균 매입가", min_value=0.0, value=float(_prev_h.get("avg_cost", 0.0)),
                     step=0.01, key=f"cost_{_t}", format="%.2f"
                 )
+                # 공매도 지원: min_value 제거 → 음수 수량 허용
                 _qty = st.number_input(
-                    "보유 수량", min_value=0.0, value=float(_prev_h.get("quantity", 0.0)),
+                    "보유 수량 (음수=공매도)", value=float(_prev_h.get("quantity", 0.0)),
                     step=1.0, key=f"qty_{_t}", format="%.4f"
                 )
-                if _avg > 0 or _qty > 0:
+                if _qty != 0:
                     st.session_state.holdings[_t] = {"avg_cost": _avg, "quantity": _qty}
                 elif _t in st.session_state.holdings:
                     del st.session_state.holdings[_t]
 
-    # 매입가/수량 기반 손익 계산
+    # 매입가/수량 기반 손익 계산 (공매도 포함)
     holdings_pnl: dict[str, dict] = {}
     for _t, _h in st.session_state.holdings.items():
-        if _t not in all_data or _h.get("avg_cost", 0) <= 0 or _h.get("quantity", 0) <= 0:
+        if _t not in all_data or _h.get("avg_cost", 0) <= 0 or _h.get("quantity", 0) == 0:
             continue
         _curr = float(all_data[_t]["Close"].iloc[-1])
         _cost = float(_h["avg_cost"])
         _qty = float(_h["quantity"])
+        _is_short = _qty < 0  # 공매도 포지션
+        # 공매도 P&L: 매입가에서 현재가로 하락할수록 이익
+        # pnl = (매입가 - 현재가) × |수량| (숏) or (현재가 - 매입가) × 수량 (롱)
+        _pnl = (_cost - _curr) * abs(_qty) if _is_short else (_curr - _cost) * _qty
+        _pnl_pct = (_cost / _curr - 1) * 100 if _is_short else (_curr / _cost - 1) * 100
         holdings_pnl[_t] = {
             "current_price": _curr,
             "avg_cost": _cost,
             "quantity": _qty,
-            "eval_amount": _curr * _qty,
-            "cost_amount": _cost * _qty,
-            "pnl": (_curr - _cost) * _qty,
-            "pnl_pct": (_curr / _cost - 1) * 100,
+            "is_short": _is_short,
+            "eval_amount": _curr * abs(_qty),
+            "cost_amount": _cost * abs(_qty),
+            "pnl": _pnl,
+            "pnl_pct": _pnl_pct,
         }
     total_pnl = sum(v["pnl"] for v in holdings_pnl.values()) if holdings_pnl else None
     total_eval = sum(v["eval_amount"] for v in holdings_pnl.values()) if holdings_pnl else None
@@ -1046,6 +1076,7 @@ with tab_portfolio:
             # 매입가/수량 기반 손익 컬럼 추가
             if t in holdings_pnl:
                 _h = holdings_pnl[t]
+                row["포지션"] = "숏(공매도)" if _h.get("is_short") else "롱"
                 row["매입가"] = f"{_h['avg_cost']:.2f}"
                 row["수량"] = f"{_h['quantity']:.4f}"
                 row["평가손익"] = f"{_h['pnl']:+,.0f}"

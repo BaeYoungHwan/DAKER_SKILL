@@ -3,7 +3,11 @@ yfinance 기반 금융 데이터 수집 모듈
 Skills/analysis.md 데이터 수집 기준 준수
 """
 
+import re
 import time
+import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import yfinance as yf
 import pandas as pd
 import requests
@@ -95,14 +99,24 @@ def fetch_info(ticker: str) -> dict:
 
 @st.cache_data(ttl=3600)
 def fetch_multiple(tickers: list[str], period: str = DEFAULT_PERIOD) -> dict[str, pd.DataFrame]:
-    """여러 종목 주가 데이터 일괄 조회 (요청 간 0.3s 지연 — Rate Limit 방지)"""
+    """여러 종목 주가 데이터 병렬 조회 (ThreadPoolExecutor — 최대 5개 동시 요청, Rate Limit 방지)"""
+    if not tickers:
+        return {}
+
+    def _fetch_one(ticker: str) -> tuple[str, pd.DataFrame]:
+        return ticker, fetch_price(ticker, period)
+
     result = {}
-    for i, ticker in enumerate(tickers):
-        df = fetch_price(ticker, period)
-        if not df.empty:
-            result[ticker] = df
-        if i < len(tickers) - 1:
-            time.sleep(0.3)
+    max_workers = min(len(tickers), 5)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_fetch_one, t): t for t in tickers}
+        for future in as_completed(futures):
+            try:
+                ticker, df = future.result()
+                if not df.empty:
+                    result[ticker] = df
+            except Exception:
+                pass
     return result
 
 
@@ -225,8 +239,104 @@ for _kr_name, _ticker in KR_NAME_MAP.items():
         KR_TICKER_TO_NAME[_ticker] = _kr_name
 
 
+# ── 레버리지·인버스 ETF 감지 ─────────────────────────────────────────────────
+
+# 미국 대표 레버리지·인버스 ETF 티커 목록
+_LEVERAGED_TICKERS: set[str] = {
+    # 레버리지 (2x·3x)
+    "TQQQ", "UPRO", "UDOW", "URTY", "SPXL", "TECL", "LABU", "FNGU", "TNA", "HIBL",
+    "ERX", "NUGT", "JNUG", "YINN", "CURE", "DFEN", "FAS", "DPST",
+    # 인버스·숏
+    "SQQQ", "SPXU", "SDOW", "SRTY", "SPXS", "TECS", "LABD", "FNGD", "TZA", "HIBS",
+    "ERY", "DUST", "JDST", "YANG", "FAZ", "SDS", "SH", "PSQ", "DOG", "RWM",
+    # 국내 레버리지·인버스 ETF (KRX)
+    "122630.KS",  # KODEX 레버리지
+    "233740.KS",  # KODEX 코스닥150레버리지
+    "252670.KS",  # KODEX 200선물인버스2X
+    "251340.KS",  # KODEX 코스닥150선물인버스
+}
+
+_INVERSE_TICKERS: set[str] = {
+    "SQQQ", "SPXU", "SDOW", "SRTY", "SPXS", "TECS", "LABD", "FNGD", "TZA", "HIBS",
+    "ERY", "DUST", "JDST", "YANG", "FAZ", "SDS", "SH", "PSQ", "DOG", "RWM",
+    "252670.KS", "251340.KS",
+}
+
+# 이름 기반 패턴 (ETF 이름에 포함 시 감지)
+_LEV_NAME_PATTERN = re.compile(
+    r"\b(2x|3x|ultra|ultrapro|proshares|direxion|leveraged|inverse|bear|short|인버스|레버리지)\b",
+    re.IGNORECASE,
+)
+
+
+def classify_position(ticker: str, name: str = "") -> dict:
+    """레버리지·인버스 ETF 여부 및 공매도(숏) 포지션 특성 반환.
+
+    Returns:
+        {
+          "leveraged": bool,   # 레버리지 ETF 여부
+          "inverse": bool,     # 인버스(방향 반대) ETF 여부
+          "warning": str | None  # UI에 표시할 경고 메시지
+        }
+    """
+    ticker_up = ticker.upper()
+    name_match = bool(_LEV_NAME_PATTERN.search(name or ""))
+    is_lev = ticker_up in _LEVERAGED_TICKERS or name_match
+    is_inv = ticker_up in _INVERSE_TICKERS or (
+        name_match and bool(re.search(r"\b(inverse|bear|short|인버스)\b", name or "", re.IGNORECASE))
+    )
+
+    warning = None
+    if is_inv:
+        warning = f"⚠️ **{ticker}**는 인버스(숏) ETF입니다. 기초자산 하락 시 수익, 상승 시 손실이 발생합니다."
+    elif is_lev:
+        warning = f"⚠️ **{ticker}**는 레버리지 ETF입니다. 변동성 비용(Volatility Decay)으로 장기 보유 시 추가 손실이 발생할 수 있습니다."
+
+    return {"leveraged": is_lev, "inverse": is_inv, "warning": warning}
+
+
+def _search_naver_finance(query: str) -> list[dict]:
+    """Naver Finance 자동완성 API로 한국 종목 동적 검색.
+
+    Returns: list of {symbol, shortname, quoteType}
+    """
+    try:
+        encoded = urllib.parse.quote(query, encoding="utf-8")
+        url = f"https://ac.finance.naver.com/ac?q={encoded}&q_enc=utf-8&target=stock&sm=all&st=0&ie=utf-8&type=stock"
+        resp = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        # items[0] = 자동완성 결과 리스트 [이름, 코드, 시장, ...]
+        items = data.get("items", [[]])[0]
+        results = []
+        seen: set[str] = set()
+        for item in items[:10]:
+            if len(item) < 2:
+                continue
+            kr_name = item[0]
+            code = item[1]
+            market = item[2] if len(item) > 2 else ""
+            # 시장 구분: 코스닥 → .KQ, 나머지(코스피·ETF 등) → .KS
+            suffix = ".KQ" if "코스닥" in market else ".KS"
+            symbol = f"{code}{suffix}"
+            if symbol in seen:
+                continue
+            seen.add(symbol)
+            results.append({"symbol": symbol, "shortname": kr_name, "quoteType": "EQUITY"})
+        return results
+    except Exception:
+        return []
+
+
 def search_ticker(query: str) -> list[dict]:
-    """종목명 또는 티커로 검색 (한국어 종목명 + Yahoo Finance 영어 검색 하이브리드)"""
+    """종목명 또는 티커로 검색 (한국어·영어 하이브리드).
+
+    검색 순서:
+      1. KR_NAME_MAP 로컬 매핑 (하드코딩된 주요 한국 종목)
+      2. Naver Finance 자동완성 API (한국어 쿼리 → 전체 KRX 커버)
+      3. Yahoo Finance 영어 검색 (ASCII 쿼리)
+    """
     query_lower = query.lower().strip()
     results: list[dict] = []
     seen_tickers: set[str] = set()
@@ -244,7 +354,18 @@ def search_ticker(query: str) -> list[dict]:
             })
             seen_tickers.add(ticker)
 
-    # 2단계: Yahoo Finance 영어 검색 (ASCII 쿼리만)
+    # 2단계: 한국어 쿼리 → Naver Finance 자동완성 (KRX 전체 커버)
+    if not query.isascii():
+        naver_results = _search_naver_finance(query)
+        for r in naver_results:
+            if r["symbol"] not in seen_tickers:
+                # KR_TICKER_TO_NAME에 공식 한국어 이름이 있으면 우선 사용
+                if r["symbol"] in KR_TICKER_TO_NAME:
+                    r["shortname"] = KR_TICKER_TO_NAME[r["symbol"]]
+                results.append(r)
+                seen_tickers.add(r["symbol"])
+
+    # 3단계: Yahoo Finance 영어 검색 (ASCII 쿼리만)
     if query.isascii():
         url = "https://query2.finance.yahoo.com/v1/finance/search"
         params = {"q": query, "quotesCount": 8, "lang": "ko-KR"}
