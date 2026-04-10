@@ -183,6 +183,19 @@ def load_insight_rules() -> list[dict]:
     return rules
 
 
+@lru_cache(maxsize=1)
+def load_kr_symbols() -> dict[str, str]:
+    """Skills/symbols.json 에서 한국어 종목명 → yfinance 티커 매핑 로드.
+
+    반환: {"삼성전자": "005930.KS", ...}
+    """
+    import json
+    path = _SKILLS_DIR / "symbols.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def get_config() -> dict:
     """전체 Skills 설정 통합 반환 (analysis + visualization)"""
     return {
