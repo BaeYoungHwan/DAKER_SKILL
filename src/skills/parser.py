@@ -147,6 +147,10 @@ def load_visualization_config() -> dict:
     for m in re.finditer(r'`(CHART_\w+)`\s*\|\s*`(#[0-9a-fA-F]{6})`', text):
         config[m.group(1)] = m.group(2)
 
+    # 레이아웃 비율 파싱: | `main_chart` | `2` | `1` |
+    for m in re.finditer(r'`([\w_]+)`\s*\|\s*`(\d+)`\s*\|\s*`(\d+)`', text):
+        config[f"layout_{m.group(1)}"] = [int(m.group(2)), int(m.group(3))]
+
     return config
 
 

@@ -61,7 +61,7 @@ from viz.charts import (
     stochastic_chart, earnings_chart, rolling_sharpe_chart, sector_heatmap,
     financials_chart, dividend_chart, backtest_chart, macro_chart,
 )
-from skills.parser import load_analysis_config, load_insight_rules
+from skills.parser import load_analysis_config, load_insight_rules, load_visualization_config
 
 # Skills/analysis.md 에서 임계치 로드 — 파일 수정 시 앱 재시작으로 자동 반영
 _ACFG = load_analysis_config()
@@ -76,25 +76,32 @@ st.set_page_config(
 
 # ── 커스텀 CSS (TradingView Dark 테마) ─────────────────────
 # 색상·폰트·컴포넌트 스타일 규칙: Skills/visualization.md §6 테마 토큰 기준
+viz_cfg = load_visualization_config()
+
+# CSS 변수: visualization.md 테마 토큰 동적 주입
+st.markdown(f"""
+<style>
+:root {{
+    --bg:          {viz_cfg.get('token_bg', '#131722')};
+    --card:        {viz_cfg.get('token_card', '#1E222D')};
+    --sidebar:     {viz_cfg.get('token_sidebar', '#1C1F2D')};
+    --border:      {viz_cfg.get('token_border', '#2A2E39')};
+    --input-bg:    {viz_cfg.get('token_input_bg', '#2A2E39')};
+    --text:        {viz_cfg.get('token_text', '#D1D4DC')};
+    --text-sub:    {viz_cfg.get('token_text_sub', '#787B86')};
+    --text-bright: {viz_cfg.get('token_text_bright', '#FFFFFF')};
+    --accent:      {viz_cfg.get('token_accent', '#2962FF')};
+    --up:          {viz_cfg.get('token_up', '#26A69A')};
+    --down:        {viz_cfg.get('token_down', '#EF5350')};
+    --neutral:     {viz_cfg.get('token_neutral', '#7B68EE')};
+}}
+</style>
+""", unsafe_allow_html=True)
+
+# 컴포넌트 스타일 규칙 (폰트·레이아웃·애니메이션)
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
-
-/* ── CSS 변수 */
-:root {
-    --bg:          #131722;
-    --card:        #1E222D;
-    --sidebar:     #1C1F2D;
-    --border:      #2A2E39;
-    --input-bg:    #2A2E39;
-    --text:        #D1D4DC;
-    --text-sub:    #787B86;
-    --text-bright: #FFFFFF;
-    --accent:      #2962FF;
-    --up:          #26A69A;
-    --down:        #EF5350;
-    --neutral:     #7B68EE;
-}
 
 /* ── 글로벌 */
 .stApp {
@@ -354,7 +361,7 @@ with st.sidebar:
         st.caption(f"종목 {len(st.session_state.selected_tickers)}개 선택됨")
         to_remove = []
         for t in list(st.session_state.selected_tickers):
-            col1, col2 = st.columns([5, 1])
+            col1, col2 = st.columns(viz_cfg.get('layout_ticker_row', [5, 1]))
             label = st.session_state.ticker_names.get(t, "")
             col1.markdown(f"**{t}** <span style='color:#787B86;font-size:11px'>{label}</span>", unsafe_allow_html=True)
             if col2.button("×", key=f"rm_{t}", help=f"{t} 제거"):
@@ -626,8 +633,8 @@ with tab_main:
     _n_days = _chart_days_map.get(chart_period, 252)
     chart_df = main_df.iloc[-_n_days:] if len(main_df) >= _n_days else main_df
 
-    # ── 2/3:1/3 그리드 레이아웃 (Skills/visualization.md §3.1)
-    col_chart, col_port = st.columns([2, 1])
+    # ── 메인/포트폴리오 그리드 레이아웃 (Skills/visualization.md §7)
+    col_chart, col_port = st.columns(viz_cfg.get('layout_main_chart', [2, 1]))
     with col_chart:
         st.markdown('<div class="sec-header"><span>📊 주가 차트</span></div>', unsafe_allow_html=True)
         mas = calc_moving_averages(close)

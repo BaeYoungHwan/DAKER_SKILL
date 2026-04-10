@@ -124,3 +124,14 @@
 | `CHART_PAPER_BGCOLOR` | `#1E222D` | 차트 용지 배경 (`--card`) |
 | `CHART_FONT_COLOR` | `#D1D4DC` | 차트 텍스트 (`--text`) |
 | `CHART_GRID_COLOR` | `#2A2E39` | 차트 격자선 (`--border`) |
+
+---
+
+## 7. 레이아웃 비율
+
+`src/app.py`의 `st.columns` 비율은 아래 정의를 따른다.
+
+| 레이아웃 ID | 좌 비율 | 우 비율 |
+|-------------|---------|---------|
+| `main_chart` | `2` | `1` |
+| `ticker_row` | `5` | `1` |
