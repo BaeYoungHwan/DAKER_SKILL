@@ -44,6 +44,29 @@ CHART_GRID_COLOR    = _c("CHART_GRID_COLOR",    "#2A2E39")
 CHART_FONT_FAMILY   = "Inter, -apple-system, sans-serif"
 
 
+def _apply_dark_theme(fig: go.Figure, height: int, **extra) -> go.Figure:
+    """공통 TradingView Dark 테마 적용 (Skills/visualization.md §6 기준).
+
+    extra kwargs는 fig.update_layout()에 직접 전달됩니다.
+    xaxis/yaxis를 extra에 포함하면 기본 gridcolor 설정은 생략됩니다.
+    """
+    base: dict = dict(
+        template="plotly_dark",
+        height=height,
+        margin=dict(l=0, r=0, t=40, b=0),
+        paper_bgcolor=CHART_PAPER_BGCOLOR,
+        plot_bgcolor=CHART_BGCOLOR,
+        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
+    )
+    if "xaxis" not in extra:
+        base["xaxis"] = dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR)
+    if "yaxis" not in extra:
+        base["yaxis"] = dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR)
+    base.update(extra)
+    fig.update_layout(**base)
+    return fig
+
+
 def candlestick_chart(
     df: pd.DataFrame,
     ticker: str,
@@ -116,15 +139,10 @@ def candlestick_chart(
         row=2, col=1,
     )
 
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 550,
         title=f"{ticker} 주가 차트",
         xaxis_rangeslider_visible=False,
-        template="plotly_dark",
-        height=550,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
         xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
         yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
         xaxis2=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
@@ -146,18 +164,11 @@ def line_chart_multi(
         fig.add_trace(go.Scatter(x=close_prices.index, y=y, name=col, mode="lines"))
 
     fig.add_hline(y=0, line_dash="dash", line_color=CHART_GRID_COLOR, opacity=0.8)
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 400,
         title=title,
         yaxis_title="누적 수익률 (%)" if normalize else "가격",
-        template="plotly_dark",
-        height=400,
-        margin=dict(l=0, r=0, t=40, b=0),
         hovermode="x unified",
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
     )
     return fig
 
@@ -180,15 +191,7 @@ def portfolio_pie(weights: dict[str, float]) -> go.Figure:
         hole=0.4,
         textinfo="label+percent",
     ))
-    fig.update_layout(
-        title="포트폴리오 자산 배분",
-        template="plotly_dark",
-        height=350,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-    )
+    _apply_dark_theme(fig, 350, title="포트폴리오 자산 배분")
     return fig
 
 
@@ -199,12 +202,7 @@ def portfolio_treemap(weights: dict[str, float]) -> go.Figure:
         values=list(weights.values()),
         title="포트폴리오 자산 배분",
     )
-    fig.update_layout(
-        template="plotly_dark",
-        height=350,
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-    )
+    _apply_dark_theme(fig, 350, title="포트폴리오 자산 배분")
     return fig
 
 
@@ -220,15 +218,7 @@ def correlation_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
         texttemplate="%{text}",
         colorbar=dict(title="상관계수"),
     ))
-    fig.update_layout(
-        title="자산 간 상관관계",
-        template="plotly_dark",
-        height=400,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-    )
+    _apply_dark_theme(fig, 400, title="자산 간 상관관계")
     return fig
 
 
@@ -279,13 +269,9 @@ def rsi_gauge_chart(rsi_value: float, ticker: str) -> go.Figure:
             },
         },
     ))
-    fig.update_layout(
-        height=260,
+    _apply_dark_theme(
+        fig, 260,
         margin=dict(l=20, r=20, t=55, b=10),
-        template="plotly_dark",
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
         annotations=[
             dict(x=0.13, y=0.08, text="과매도<br>(30)", showarrow=False,
                  font=dict(size=10, color="#26a69a"), align="center"),
@@ -323,18 +309,11 @@ def macd_chart(macd_data: dict, ticker: str) -> go.Figure:
     ))
     fig.add_hline(y=0, line_dash="dash", line_color=CHART_GRID_COLOR, opacity=0.8)
 
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 280,
         title=f"{ticker} MACD (12, 26, 9)",
-        template="plotly_dark",
-        height=280,
-        margin=dict(l=0, r=0, t=40, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         hovermode="x unified",
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     return fig
 
@@ -352,16 +331,10 @@ def rsi_chart(rsi: pd.Series, ticker: str) -> go.Figure:
     fig.add_hrect(y0=70, y1=100, fillcolor=COLOR_DOWN, opacity=0.08, line_width=0)
     fig.add_hrect(y0=0, y1=30, fillcolor=COLOR_UP, opacity=0.08, line_width=0)
 
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 280,
         title=f"{ticker} RSI (14)",
         yaxis=dict(range=[0, 100], gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        template="plotly_dark",
-        height=280,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
     )
     return fig
 
@@ -385,18 +358,7 @@ def drawdown_chart(drawdown: pd.Series, ticker: str) -> go.Figure:
         font=dict(color=COLOR_DOWN, size=11),
         arrowcolor=COLOR_DOWN,
     )
-    fig.update_layout(
-        title=f"{ticker} 드로다운 (Drawdown)",
-        yaxis_title="낙폭 (%)",
-        template="plotly_dark",
-        height=280,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-    )
+    _apply_dark_theme(fig, 280, title=f"{ticker} 드로다운 (Drawdown)", yaxis_title="낙폭 (%)")
     return fig
 
 
@@ -415,18 +377,11 @@ def risk_return_scatter(metrics: list) -> go.Figure:
             showlegend=False,
         ))
     fig.add_hline(y=0, line_dash="dash", line_color=CHART_GRID_COLOR, opacity=0.8)
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 420,
         title="리스크-수익률 산점도",
         xaxis_title="연환산 변동성 (%)",
         yaxis_title="누적 수익률 (%)",
-        template="plotly_dark",
-        height=420,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
     )
     return fig
 
@@ -446,17 +401,12 @@ def stochastic_chart(stoch: dict, ticker: str) -> go.Figure:
     fig.add_hline(y=20, line_dash="dash", line_color=COLOR_UP, opacity=0.6, annotation_text="과매도(20)")
     fig.add_hrect(y0=80, y1=100, fillcolor=COLOR_DOWN, opacity=0.06, line_width=0)
     fig.add_hrect(y0=0, y1=20, fillcolor=COLOR_UP, opacity=0.06, line_width=0)
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 280,
         title=f"{ticker} 스토캐스틱 (14, 3)",
         yaxis=dict(range=[0, 100], gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
         xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        template="plotly_dark",
-        height=280,
-        margin=dict(l=0, r=0, t=40, b=0),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
     )
     return fig
 
@@ -477,17 +427,10 @@ def rolling_sharpe_chart(close_prices: pd.DataFrame, window: int = 60) -> go.Fig
     fig.add_hline(y=1, line_dash="dash", line_color=COLOR_UP, opacity=0.6,
                   annotation_text="Sharpe=1", annotation_font_color=COLOR_UP)
     fig.add_hline(y=0, line_dash="dot", line_color=CHART_GRID_COLOR, opacity=0.8)
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 320,
         title=f"롤링 샤프 비율 ({window}일 기준)",
         yaxis_title="샤프 비율",
-        template="plotly_dark",
-        height=320,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
         legend=dict(bgcolor="rgba(0,0,0,0)"),
     )
     return fig
@@ -515,17 +458,11 @@ def earnings_chart(df: pd.DataFrame, ticker: str) -> go.Figure:
                 showarrow=False, yshift=12,
                 font=dict(size=10, color=color),
             )
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 320,
         title=f"{ticker} 분기별 EPS (예상 vs 실제)",
         barmode="overlay",
-        template="plotly_dark",
-        height=320,
-        margin=dict(l=0, r=0, t=40, b=0),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
         yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR, title="EPS ($)"),
     )
     return fig
@@ -551,16 +488,10 @@ def sector_heatmap(sector_returns: pd.DataFrame) -> go.Figure:
             tickfont=dict(color=CHART_FONT_COLOR),
         ),
     ))
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 420,
         title="섹터별 성과 히트맵",
-        template="plotly_dark",
-        height=420,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
         xaxis=dict(side="top", gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
     )
     return fig
 
@@ -578,16 +509,10 @@ def financials_chart(df: pd.DataFrame, ticker: str) -> go.Figure:
             marker_color=color,
             opacity=0.85,
         ))
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 320,
         title=f"{ticker} 분기별 재무 현황 (십억 $)",
         barmode="group",
-        template="plotly_dark",
-        height=320,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
         yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR, title="십억 ($B)"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(0,0,0,0)"),
     )
@@ -605,15 +530,9 @@ def dividend_chart(dividends: "pd.Series", ticker: str) -> go.Figure:
         marker_color=colors,
         name="배당금",
     ))
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 250,
         title=f"{ticker} 배당금 히스토리",
-        template="plotly_dark",
-        height=250,
-        margin=dict(l=0, r=0, t=40, b=0),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
         yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR, title="배당금 ($)"),
     )
     return fig
@@ -643,21 +562,14 @@ def backtest_chart(
         line=dict(color="#FFA500", width=1.5, dash="dash"),
     ))
     fig.add_hline(y=0, line_color=CHART_GRID_COLOR, line_width=1)
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 380,
         title=dict(text=f"{strategy_label} 백테스트 결과", font=dict(color=CHART_FONT_COLOR, size=14)),
         xaxis_title="날짜",
         yaxis_title="누적 수익률 (%)",
         yaxis_tickformat=".1f",
-        template="plotly_dark",
-        height=380,
-        margin=dict(l=0, r=0, t=40, b=0),
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
-        xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
-        yaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
     )
     return fig
 
@@ -690,15 +602,11 @@ def macro_chart(macro_data: dict) -> go.Figure:
             row=i, col=1,
         )
 
-    fig.update_layout(
+    _apply_dark_theme(
+        fig, 120 * n + 60,
         title="매크로 지표 추이 (기준일 대비 변화율)",
-        template="plotly_dark",
-        height=120 * n + 60,
         margin=dict(l=0, r=0, t=50, b=0),
         hovermode="x unified",
-        paper_bgcolor=CHART_PAPER_BGCOLOR,
-        plot_bgcolor=CHART_BGCOLOR,
-        font=dict(color=CHART_FONT_COLOR, family=CHART_FONT_FAMILY),
         xaxis=dict(gridcolor=CHART_GRID_COLOR, linecolor=CHART_GRID_COLOR),
     )
     return fig

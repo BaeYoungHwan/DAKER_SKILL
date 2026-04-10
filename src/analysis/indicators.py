@@ -223,6 +223,188 @@ def calc_stochastic(df: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> 
     return {"k": k, "d": d}
 
 
+def generate_screener_signals(
+    df: pd.DataFrame,
+    info: dict,
+    cfg: dict,
+) -> list[str]:
+    """종목 스크리너 기술적 신호 생성 (UI 의존성 없는 순수 함수).
+
+    Args:
+        df: OHLCV DataFrame (Close, Volume 포함)
+        info: fetch_info() 반환값 (pe_ratio 포함)
+        cfg: load_analysis_config() 반환값
+
+    Returns:
+        신호 문자열 리스트 (예: ["🟢 RSI 과매도", "🚀 52주 신고가"])
+    """
+    # 스크리너 임계값
+    GOLDEN_CROSS_DAYS   = 30
+    VOL_SURGE_RATIO     = 2.0
+    LOW_PER_THRESHOLD   = 15.0
+    LOW_RSI_FOR_PER     = 40.0
+    HIGH_52W_PROXIMITY  = 0.99   # 52주 고가의 99% 이상이면 신고가 돌파
+
+    c = df["Close"]
+    signals: list[str] = []
+    ob, os_ = cfg.get("rsi_overbought", 70), cfg.get("rsi_oversold", 30)
+
+    rsi_val = float(calc_rsi(c).dropna().iloc[-1])
+    if rsi_val < os_:
+        signals.append("🟢 RSI 과매도")
+    elif rsi_val > ob:
+        signals.append("🔴 RSI 과매수")
+
+    mas = calc_moving_averages(c)
+    gc = detect_golden_cross(mas["MA20"], mas["MA60"])
+    dc = detect_golden_cross(mas["MA60"], mas["MA20"])
+    if gc and (c.index[-1] - gc).days <= GOLDEN_CROSS_DAYS:
+        signals.append("🟢 골든크로스")
+    if dc and (c.index[-1] - dc).days <= GOLDEN_CROSS_DAYS:
+        signals.append("🔴 데드크로스")
+
+    bb = calc_bollinger_bands(c)
+    lp = float(c.iloc[-1])
+    upper, lower = bb["upper"].dropna(), bb["lower"].dropna()
+    if not upper.empty and lp > float(upper.iloc[-1]):
+        signals.append("🟡 BB 상단")
+    elif not lower.empty and lp < float(lower.iloc[-1]):
+        signals.append("🟢 BB 하단")
+
+    hist = calc_macd(c)["histogram"].dropna()
+    if len(hist) >= 2:
+        if float(hist.iloc[-1]) > 0 and float(hist.iloc[-2]) <= 0:
+            signals.append("🟢 MACD↑")
+        elif float(hist.iloc[-1]) < 0 and float(hist.iloc[-2]) >= 0:
+            signals.append("🔴 MACD↓")
+
+    w52 = calc_52week_range(c)
+    if lp >= w52["high_52"] * HIGH_52W_PROXIMITY:
+        signals.append("🚀 52주 신고가")
+
+    if "Volume" in df.columns:
+        vol = df["Volume"].dropna()
+        if len(vol) >= 21:
+            avg_vol = float(vol.iloc[-21:-1].mean())
+            cur_vol = float(vol.iloc[-1])
+            if avg_vol > 0 and cur_vol >= avg_vol * VOL_SURGE_RATIO:
+                signals.append(f"📈 거래량 {cur_vol / avg_vol:.1f}배↑")
+
+    per = info.get("pe_ratio")
+    if per and 0 < float(per) < LOW_PER_THRESHOLD and rsi_val < LOW_RSI_FOR_PER:
+        signals.append(f"💎 저PER({per:.0f})+저RSI")
+
+    return signals
+
+
+def calc_holdings_pnl(
+    holdings: dict,
+    current_prices: dict,
+) -> dict:
+    """보유 종목 평가손익 계산 (공매도 포함).
+
+    Args:
+        holdings: {ticker: {"avg_cost": float, "quantity": float}}
+        current_prices: {ticker: float}
+
+    Returns:
+        {ticker: {"current_price", "avg_cost", "quantity", "is_short",
+                  "eval_amount", "cost_amount", "pnl", "pnl_pct"}}
+    """
+    result: dict = {}
+    for ticker, h in holdings.items():
+        curr = current_prices.get(ticker)
+        if curr is None or h.get("avg_cost", 0) <= 0 or h.get("quantity", 0) == 0:
+            continue
+        cost = float(h["avg_cost"])
+        qty  = float(h["quantity"])
+        is_short = qty < 0
+        pnl     = (cost - curr) * abs(qty) if is_short else (curr - cost) * qty
+        pnl_pct = (cost / curr - 1) * 100  if is_short else (curr / cost - 1) * 100
+        result[ticker] = {
+            "current_price": curr,
+            "avg_cost":      cost,
+            "quantity":      qty,
+            "is_short":      is_short,
+            "eval_amount":   curr * abs(qty),
+            "cost_amount":   cost * abs(qty),
+            "pnl":           pnl,
+            "pnl_pct":       pnl_pct,
+        }
+    return result
+
+
+def _generate_signals(
+    close: pd.Series,
+    strategy: str,
+    cfg: dict,
+) -> tuple[pd.Series, pd.Series]:
+    """전략별 매수/매도 신호 시리즈 반환."""
+    if strategy == "ma_cross":
+        ma_short = close.rolling(20).mean()
+        ma_long = close.rolling(60).mean()
+        buy_signal = (ma_short > ma_long) & (ma_short.shift(1) <= ma_long.shift(1))
+        sell_signal = (ma_short < ma_long) & (ma_short.shift(1) >= ma_long.shift(1))
+    else:  # rsi_reversal
+        rsi = calc_rsi(close)
+        ob = cfg.get("rsi_overbought", 70)
+        os_ = cfg.get("rsi_oversold", 30)
+        buy_signal = (rsi < os_) & (rsi.shift(1) >= os_)
+        sell_signal = (rsi > ob) & (rsi.shift(1) <= ob)
+    return buy_signal, sell_signal
+
+
+def _simulate_portfolio(
+    close: pd.Series,
+    buy_signal: pd.Series,
+    sell_signal: pd.Series,
+    initial_capital: float,
+) -> tuple[pd.Series, list[dict]]:
+    """매수/매도 신호 기반 포트폴리오 시뮬레이션."""
+    cash, shares, in_position = float(initial_capital), 0.0, False
+    portfolio_values: list[float] = []
+    trades: list[dict] = []
+
+    for date, price in close.items():
+        if pd.isna(price):
+            portfolio_values.append(cash)
+            continue
+        if bool(buy_signal.get(date, False)) and not in_position:
+            shares, cash, in_position = cash / float(price), 0.0, True
+            trades.append({"날짜": date.strftime("%Y-%m-%d"), "신호": "매수", "가격": round(float(price), 2)})
+        elif bool(sell_signal.get(date, False)) and in_position:
+            cash, shares, in_position = shares * float(price), 0.0, False
+            trades.append({"날짜": date.strftime("%Y-%m-%d"), "신호": "매도", "가격": round(float(price), 2)})
+        portfolio_values.append(cash + shares * float(price))
+
+    return pd.Series(portfolio_values, index=close.index), trades
+
+
+def _calc_backtest_metrics(
+    portfolio: pd.Series,
+    benchmark: pd.Series,
+    trades: list[dict],
+    initial_capital: float,
+) -> dict:
+    """백테스트 성과 지표 계산 (수익률, 승률, MDD)."""
+    buy_prices  = [t["가격"] for t in trades if t["신호"] == "매수"]
+    sell_prices = [t["가격"] for t in trades if t["신호"] == "매도"]
+    pairs = min(len(buy_prices), len(sell_prices))
+    wins  = sum(1 for i in range(pairs) if sell_prices[i] > buy_prices[i])
+    running_max = portfolio.cummax()
+    mdd = float(((portfolio - running_max) / running_max * 100).min())
+    final_ret = (float(portfolio.iloc[-1]) / initial_capital - 1) * 100
+    bench_ret  = (float(benchmark.iloc[-1]) / initial_capital - 1) * 100
+    return {
+        "전략수익률(%)": round(final_ret, 1),
+        "Buy&Hold(%)":   round(bench_ret, 1),
+        "초과수익(%p)":  round(final_ret - bench_ret, 1),
+        "총거래횟수":    len(trades),
+        "승률(%)":       round((wins / pairs * 100) if pairs > 0 else 0.0, 1),
+        "MDD(%)":        round(mdd, 1),
+    }
+
+
 def run_backtest(
     close: pd.Series,
     strategy: str = "ma_cross",
@@ -237,77 +419,10 @@ def run_backtest(
     if len(close) < 70:
         return {}
 
-    if strategy == "ma_cross":
-        ma_short = close.rolling(20).mean()
-        ma_long = close.rolling(60).mean()
-        buy_signal = (ma_short > ma_long) & (ma_short.shift(1) <= ma_long.shift(1))
-        sell_signal = (ma_short < ma_long) & (ma_short.shift(1) >= ma_long.shift(1))
-    else:  # rsi_reversal
-        rsi = calc_rsi(close)
-        ob = cfg.get("rsi_overbought", 70)
-        os_ = cfg.get("rsi_oversold", 30)
-        buy_signal = (rsi < os_) & (rsi.shift(1) >= os_)
-        sell_signal = (rsi > ob) & (rsi.shift(1) <= ob)
-
-    cash = float(initial_capital)
-    shares = 0.0
-    in_position = False
-    portfolio_values = []
-    trades = []
-
-    for date, price in close.items():
-        if pd.isna(price):
-            portfolio_values.append(cash + shares * (price if not pd.isna(price) else 0))
-            continue
-
-        is_buy = bool(buy_signal.get(date, False))
-        is_sell = bool(sell_signal.get(date, False))
-
-        if is_buy and not in_position:
-            shares = cash / float(price)
-            cash = 0.0
-            in_position = True
-            trades.append({
-                "날짜": date.strftime("%Y-%m-%d"),
-                "신호": "매수",
-                "가격": round(float(price), 2),
-            })
-        elif is_sell and in_position:
-            cash = shares * float(price)
-            shares = 0.0
-            in_position = False
-            trades.append({
-                "날짜": date.strftime("%Y-%m-%d"),
-                "신호": "매도",
-                "가격": round(float(price), 2),
-            })
-
-        portfolio_values.append(cash + shares * float(price))
-
-    portfolio = pd.Series(portfolio_values, index=close.index)
+    buy_signal, sell_signal = _generate_signals(close, strategy, cfg)
+    portfolio, trades = _simulate_portfolio(close, buy_signal, sell_signal, initial_capital)
     benchmark = initial_capital * (close / float(close.iloc[0]))
-
-    # 승률 계산
-    buy_prices = [t["가격"] for t in trades if t["신호"] == "매수"]
-    sell_prices = [t["가격"] for t in trades if t["신호"] == "매도"]
-    pairs = min(len(buy_prices), len(sell_prices))
-    wins = sum(1 for i in range(pairs) if sell_prices[i] > buy_prices[i])
-    win_rate = (wins / pairs * 100) if pairs > 0 else 0.0
-
-    running_max = portfolio.cummax()
-    mdd = float(((portfolio - running_max) / running_max * 100).min())
-
-    final_return = (float(portfolio.iloc[-1]) / initial_capital - 1) * 100
-    bench_return = (float(benchmark.iloc[-1]) / initial_capital - 1) * 100
-
-    metrics = {
-        "전략수익률(%)": round(final_return, 1),
-        "Buy&Hold(%)": round(bench_return, 1),
-        "초과수익(%p)": round(final_return - bench_return, 1),
-        "총거래횟수": len(trades),
-        "승률(%)": round(win_rate, 1),
-        "MDD(%)": round(mdd, 1),
-    }
+    metrics = _calc_backtest_metrics(portfolio, benchmark, trades, initial_capital)
 
     return {
         "portfolio": portfolio,

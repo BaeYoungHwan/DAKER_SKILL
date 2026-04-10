@@ -3,6 +3,7 @@ yfinance 기반 금융 데이터 수집 모듈
 Skills/analysis.md 데이터 수집 기준 준수
 """
 
+import logging
 import re
 import time
 import urllib.parse
@@ -14,6 +15,8 @@ import requests
 import streamlit as st
 from typing import Optional
 from skills.parser import load_kr_symbols
+
+_logger = logging.getLogger(__name__)
 
 
 def _flatten_columns(data: pd.DataFrame) -> pd.DataFrame:
@@ -41,41 +44,60 @@ def _clean_price_outliers(data: pd.DataFrame) -> pd.DataFrame:
     return data.ffill()
 
 
+def _download_and_clean(
+    ticker: str,
+    period: str,
+    *,
+    retries: int = 1,
+    apply_outlier_filter: bool = False,
+) -> pd.DataFrame:
+    """yf.download → flatten → ffill → (optional) clean_outliers 통합 파이프라인."""
+    df = pd.DataFrame()
+    for attempt in range(retries):
+        try:
+            df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+            if not df.empty:
+                break
+        except Exception as e:
+            _logger.debug("_download_and_clean(%s) attempt %d failed: %s", ticker, attempt, e)
+        if attempt < retries - 1:
+            time.sleep(1.5 * (attempt + 1))
+    if df.empty:
+        return pd.DataFrame()
+    df = _flatten_columns(df)
+    df = df.ffill()
+    if apply_outlier_filter:
+        df = _clean_price_outliers(df)
+    return df
+
+
+def _strip_tz(index: pd.DatetimeIndex) -> pd.DatetimeIndex:
+    """timezone 정보 제거 — tz-aware 인덱스를 tz-naive로 변환."""
+    if hasattr(index, "tz") and index.tz is not None:
+        return index.tz_localize(None)
+    return index
+
+
 # 기간 선택 기준 (Skills/analysis.md §1)
 VALID_PERIODS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"]
 DEFAULT_PERIOD = "1y"
 
+# 주요 시장 지수 티커 매핑
+_MAJOR_INDICES: dict[str, str] = {
+    "S&P 500": "^GSPC",
+    "NASDAQ":  "^IXIC",
+    "DOW JONES": "^DJI",
+    "KOSPI":   "^KS11",
+}
+_OVERVIEW_INDICES: dict[str, str] = {**_MAJOR_INDICES, "VIX": "^VIX"}
+
 
 @st.cache_data(ttl=3600)  # 1시간 캐싱 (Skills/analysis.md §4)
 def fetch_price(ticker: str, period: str = DEFAULT_PERIOD) -> pd.DataFrame:
-    """OHLCV 주가 데이터 조회 (Rate Limit 대응: 최대 2회 재시도)"""
+    """OHLCV 주가 데이터 조회 (Rate Limit 대응: 최대 3회 재시도)"""
     if period not in VALID_PERIODS:
         period = DEFAULT_PERIOD
-
-    data = pd.DataFrame()
-    for attempt in range(3):
-        try:
-            data = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-            if not data.empty:
-                break
-        except Exception:
-            pass
-        if attempt < 2:
-            time.sleep(1.5 * (attempt + 1))  # 1.5s → 3.0s 지연 후 재시도
-
-    if data.empty:
-        return pd.DataFrame()
-
-    # MultiIndex 컬럼 평탄화 (yfinance >= 0.2.x 대응)
-    data = _flatten_columns(data)
-
-    # 결측값 처리: forward fill (Skills/analysis.md §4)
-    data = data.ffill()
-
-    # 이상치 필터링: yfinance 데이터 오류 제거 (±50% 초과 일별 변동)
-    data = _clean_price_outliers(data)
-
-    return data
+    return _download_and_clean(ticker, period, retries=3, apply_outlier_filter=True)
 
 
 @st.cache_data(ttl=3600)
@@ -116,21 +138,15 @@ def fetch_multiple(tickers: list[str], period: str = DEFAULT_PERIOD) -> dict[str
                 ticker, df = future.result()
                 if not df.empty:
                     result[ticker] = df
-            except Exception:
-                pass
+            except Exception as e:
+                _logger.debug("fetch_multiple future failed: %s", e)
     return result
 
 
 @st.cache_data(ttl=3600)
 def fetch_market_indices(period: str = DEFAULT_PERIOD) -> dict[str, pd.DataFrame]:
     """주요 시장 지수 조회 (S&P500, NASDAQ, KOSPI)"""
-    indices = {
-        "S&P 500": "^GSPC",
-        "NASDAQ": "^IXIC",
-        "KOSPI": "^KS11",
-        "DOW JONES": "^DJI",
-    }
-    return fetch_multiple(list(indices.values()), period)
+    return fetch_multiple(list(_MAJOR_INDICES.values()), period)
 
 
 @st.cache_data(ttl=3600)
@@ -138,11 +154,10 @@ def fetch_exchange_rate_series(from_currency: str = "USD", to_currency: str = "K
     """환율 시계열 조회 (예: USDKRW=X). 원화 환산 포트폴리오 비교에 사용."""
     try:
         ticker = f"{from_currency}{to_currency}=X"
-        data = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-        if data.empty:
+        df = _download_and_clean(ticker, period)
+        if df.empty:
             return pd.Series(dtype=float)
-        data = _flatten_columns(data)
-        return data["Close"].ffill()
+        return df["Close"]
     except Exception:
         return pd.Series(dtype=float)
 
@@ -299,8 +314,8 @@ def search_ticker(query: str) -> list[dict]:
                         if q["symbol"] in KR_TICKER_TO_NAME:
                             q["shortname"] = KR_TICKER_TO_NAME[q["symbol"]]
                         results.append(q)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.debug("search_ticker Yahoo API failed for %r: %s", query, e)
 
     return results[:8]
 
@@ -308,123 +323,107 @@ def search_ticker(query: str) -> list[dict]:
 @st.cache_data(ttl=300)  # 5분 캐싱 (시장 데이터 자주 갱신)
 def fetch_market_overview() -> dict:
     """주요 시장 지수 현황 (현재가 + 전일 대비 변동률)"""
-    indices = {
-        "S&P 500": "^GSPC",
-        "NASDAQ": "^IXIC",
-        "DOW": "^DJI",
-        "KOSPI": "^KS11",
-        "VIX": "^VIX",
-    }
     result = {}
-    for i, (name, ticker) in enumerate(indices.items()):
+    items = list(_OVERVIEW_INDICES.items())
+    for i, (name, ticker) in enumerate(items):
         try:
-            df = yf.download(ticker, period="5d", progress=False, auto_adjust=True)
-            if df.empty:
+            df = _download_and_clean(ticker, "5d")
+            if df.empty or len(df) < 2:
                 continue
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            df = df.ffill()
-            if len(df) >= 2:
-                curr = float(df["Close"].iloc[-1])
-                prev = float(df["Close"].iloc[-2])
-                chg = (curr - prev) / prev * 100
-                result[name] = {"price": curr, "change": round(chg, 2), "ticker": ticker}
+            curr = float(df["Close"].iloc[-1])
+            prev = float(df["Close"].iloc[-2])
+            chg = (curr - prev) / prev * 100
+            result[name] = {"price": curr, "change": round(chg, 2), "ticker": ticker}
         except Exception:
             pass
-        if i < len(indices) - 1:
+        if i < len(items) - 1:
             time.sleep(0.2)
     return result
+
+
+# 공포/탐욕 지수 레이블 임계값
+_FG_EXTREME_GREED = 75
+_FG_GREED         = 55
+_FG_NEUTRAL_HIGH  = 45
+_FG_FEAR          = 25
+
+
+def _fg_vix_score(vix: pd.Series) -> "float | None":
+    """VIX 기반 공포/탐욕 점수 (역방향: VIX 낮을수록 탐욕)."""
+    if len(vix) < 2:
+        return None
+    vix_now, vmin, vmax = float(vix.iloc[-1]), float(vix.min()), float(vix.max())
+    return 100 - ((vix_now - vmin) / (vmax - vmin) * 100) if vmax > vmin else 50.0
+
+
+def _fg_momentum_score(sp_close: pd.Series) -> "float | None":
+    """S&P500 125일 이평 대비 모멘텀 점수."""
+    if len(sp_close) < 126:
+        return None
+    ma125 = float(sp_close.rolling(125).mean().dropna().iloc[-1])
+    ratio = (float(sp_close.iloc[-1]) / ma125 - 1) * 100
+    return float(min(max(50 + ratio * 5, 0), 100))
+
+
+def _fg_bb_score(sp_close: pd.Series) -> "float | None":
+    """볼린저 밴드 폭 기반 점수 (좁을수록 낮은 불확실성 = 탐욕)."""
+    if len(sp_close) < 21:
+        return None
+    bb_width = (sp_close.rolling(20).std() / sp_close.rolling(20).mean() * 100).dropna()
+    bw_now, bwmin, bwmax = float(bb_width.iloc[-1]), float(bb_width.min()), float(bb_width.max())
+    return 100 - ((bw_now - bwmin) / (bwmax - bwmin) * 100) if bwmax > bwmin else 50.0
+
+
+def _fg_label(score: float) -> str:
+    """점수 → 공포/탐욕 레이블."""
+    if score >= _FG_EXTREME_GREED:
+        return "극단적 탐욕"
+    if score >= _FG_GREED:
+        return "탐욕"
+    if score >= _FG_NEUTRAL_HIGH:
+        return "중립"
+    if score >= _FG_FEAR:
+        return "공포"
+    return "극단적 공포"
 
 
 @st.cache_data(ttl=600)  # 10분 캐싱
 def fetch_fear_greed() -> dict:
     """yfinance 지표 기반 자체 계산 공포/탐욕 지수 (0=극단공포, 100=극단탐욕)"""
-    def _close(ticker: str, period: str = "1y") -> pd.Series:
-        for attempt in range(2):
-            try:
-                df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-                if not df.empty:
-                    break
-            except Exception:
-                pass
-            if attempt == 0:
-                time.sleep(1.0)
-        else:
-            return pd.Series(dtype=float)
+    def _get_close(ticker: str) -> pd.Series:
+        df = _download_and_clean(ticker, "1y", retries=2)
         if df.empty:
             return pd.Series(dtype=float)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
         close = df["Close"]
         if isinstance(close, pd.DataFrame):
             close = close.iloc[:, 0]
         return close.dropna()
 
-    scores = []
+    sp_close = _get_close("^GSPC")
+    vix_close = _get_close("^VIX")
 
-    # 1. VIX (역방향: VIX 낮을수록 탐욕)
-    try:
-        vix = _close("^VIX")
-        if len(vix) >= 2:
-            vix_now = float(vix.iloc[-1])
-            vix_min, vix_max = float(vix.min()), float(vix.max())
-            vix_score = 100 - ((vix_now - vix_min) / (vix_max - vix_min) * 100) if vix_max > vix_min else 50
-            scores.append(("vix", vix_score, 0.4))
-    except Exception:
-        pass
+    scores: list[tuple[str, float, float]] = []
 
-    # 2. S&P500 모멘텀 (현재가 vs 125일 이평)
-    sp_close = _close("^GSPC")
-    try:
-        if len(sp_close) >= 126:
-            sp_ma125 = sp_close.rolling(125).mean().dropna()
-            ma_val = float(sp_ma125.iloc[-1])
-            curr_val = float(sp_close.iloc[-1])
-            ratio = (curr_val / ma_val - 1) * 100
-            mom_score = float(min(max(50 + ratio * 5, 0), 100))
-            scores.append(("mom", mom_score, 0.4))
-    except Exception:
-        pass
+    vix_score = _fg_vix_score(vix_close)
+    if vix_score is not None:
+        scores.append(("vix", vix_score, 0.4))
 
-    # 3. 볼린저 밴드 폭 (좁을수록 낮은 불확실성 = 탐욕)
-    try:
-        if len(sp_close) >= 21:
-            bb_width = (sp_close.rolling(20).std() / sp_close.rolling(20).mean() * 100).dropna()
-            bw_now = float(bb_width.iloc[-1])
-            bw_min, bw_max = float(bb_width.min()), float(bb_width.max())
-            bw_score = 100 - ((bw_now - bw_min) / (bw_max - bw_min) * 100) if bw_max > bw_min else 50
-            scores.append(("bw", bw_score, 0.2))
-    except Exception:
-        pass
+    mom_score = _fg_momentum_score(sp_close)
+    if mom_score is not None:
+        scores.append(("mom", mom_score, 0.4))
+
+    bb_score = _fg_bb_score(sp_close)
+    if bb_score is not None:
+        scores.append(("bw", bb_score, 0.2))
 
     if not scores:
         return {"score": 50, "label": "중립", "vix": None}
 
     total_weight = sum(w for _, _, w in scores)
-    score = round(sum(s * w for _, s, w in scores) / total_weight, 1)
-    score = float(min(max(score, 0), 100))
+    score = round(float(min(max(sum(s * w for _, s, w in scores) / total_weight, 0), 100)), 1)
+    vix_val = round(float(vix_close.iloc[-1]), 2) if not vix_close.empty else None
 
-    if score >= 75:
-        label = "극단적 탐욕"
-    elif score >= 55:
-        label = "탐욕"
-    elif score >= 45:
-        label = "중립"
-    elif score >= 25:
-        label = "공포"
-    else:
-        label = "극단적 공포"
-
-    vix_val = None
-    for name, s, _ in scores:
-        if name == "vix":
-            try:
-                vix_val = round(float(_close("^VIX").iloc[-1]), 2)
-            except Exception:
-                pass
-            break
-
-    return {"score": score, "label": label, "vix": vix_val}
+    return {"score": score, "label": _fg_label(score), "vix": vix_val}
 
 
 def fetch_earnings(ticker: str) -> pd.DataFrame:
@@ -499,8 +498,7 @@ def fetch_dividends(ticker: str) -> pd.Series:
         div = t.dividends
         if div is None or div.empty:
             return pd.Series(dtype=float)
-        if hasattr(div.index, "tz") and div.index.tz is not None:
-            div.index = div.index.tz_localize(None)
+        div.index = _strip_tz(div.index)
         return div.sort_index()
     except Exception:
         return pd.Series(dtype=float)
@@ -582,13 +580,10 @@ def fetch_macro_data(period: str = "1y") -> dict:
     result = {}
     for label, sym in symbols.items():
         try:
-            df = yf.download(sym, period=period, auto_adjust=True, progress=False)
-            if df is None or df.empty:
+            df = _download_and_clean(sym, period)
+            if df.empty:
                 continue
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
+            df.index = _strip_tz(df.index)
             result[label] = df["Close"].dropna()
         except Exception:
             continue

@@ -52,6 +52,7 @@ from analysis.indicators import (
     calc_drawdown_series, calc_correlation_matrix, get_rsi_signal,
     detect_golden_cross, calc_52week_range, calc_macd, calc_beta, calc_momentum,
     calc_stochastic, calc_rolling_sharpe, run_backtest,
+    generate_screener_signals, calc_holdings_pnl,
 )
 from viz.charts import (
     candlestick_chart, line_chart_multi,
@@ -859,31 +860,11 @@ with tab_portfolio:
                     del st.session_state.holdings[_t]
 
     # 매입가/수량 기반 손익 계산 (공매도 포함)
-    holdings_pnl: dict[str, dict] = {}
-    for _t, _h in st.session_state.holdings.items():
-        if _t not in all_data or _h.get("avg_cost", 0) <= 0 or _h.get("quantity", 0) == 0:
-            continue
-        _curr = float(all_data[_t]["Close"].iloc[-1])
-        _cost = float(_h["avg_cost"])
-        _qty = float(_h["quantity"])
-        _is_short = _qty < 0  # 공매도 포지션
-        # 공매도 P&L: 매입가에서 현재가로 하락할수록 이익
-        # pnl = (매입가 - 현재가) × |수량| (숏) or (현재가 - 매입가) × 수량 (롱)
-        _pnl = (_cost - _curr) * abs(_qty) if _is_short else (_curr - _cost) * _qty
-        _pnl_pct = (_cost / _curr - 1) * 100 if _is_short else (_curr / _cost - 1) * 100
-        holdings_pnl[_t] = {
-            "current_price": _curr,
-            "avg_cost": _cost,
-            "quantity": _qty,
-            "is_short": _is_short,
-            "eval_amount": _curr * abs(_qty),
-            "cost_amount": _cost * abs(_qty),
-            "pnl": _pnl,
-            "pnl_pct": _pnl_pct,
-        }
-    total_pnl = sum(v["pnl"] for v in holdings_pnl.values()) if holdings_pnl else None
-    total_eval = sum(v["eval_amount"] for v in holdings_pnl.values()) if holdings_pnl else None
-    total_cost = sum(v["cost_amount"] for v in holdings_pnl.values()) if holdings_pnl else None
+    _current_prices = {t: float(all_data[t]["Close"].iloc[-1]) for t in all_data}
+    holdings_pnl = calc_holdings_pnl(st.session_state.holdings, _current_prices)
+    total_pnl  = sum(v["pnl"]          for v in holdings_pnl.values()) if holdings_pnl else None
+    total_eval = sum(v["eval_amount"]   for v in holdings_pnl.values()) if holdings_pnl else None
+    total_cost = sum(v["cost_amount"]   for v in holdings_pnl.values()) if holdings_pnl else None
 
     # ── 포트폴리오 KPI 요약 스트립
     port_returns = {}
@@ -1324,69 +1305,15 @@ with tab_insight:
     screener_rows = []
     for t in all_data:
         df_t = all_data[t]
-        c_t = df_t["Close"]
-        rsi_t = float(calc_rsi(c_t).dropna().iloc[-1])
-        mas_t = calc_moving_averages(c_t)
-        gc_t = detect_golden_cross(mas_t["MA20"], mas_t["MA60"])
-        dc_t = detect_golden_cross(mas_t["MA60"], mas_t["MA20"])
-        bb_t = calc_bollinger_bands(c_t)
-        macd_t = calc_macd(c_t)
-        hist_t = macd_t["histogram"].dropna()
-
-        signals = []
-        _ob = _ACFG["rsi_overbought"]
-        _os = _ACFG["rsi_oversold"]
-        if rsi_t < _os:
-            signals.append("🟢 RSI 과매도")
-        elif rsi_t > _ob:
-            signals.append("🔴 RSI 과매수")
-
-        if gc_t and (c_t.index[-1] - gc_t).days <= 30:
-            signals.append("🟢 골든크로스")
-        if dc_t and (c_t.index[-1] - dc_t).days <= 30:
-            signals.append("🔴 데드크로스")
-
-        upper_bb_t = bb_t["upper"].dropna()
-        lower_bb_t = bb_t["lower"].dropna()
-        last_p_t = float(c_t.iloc[-1])
-        if not upper_bb_t.empty and last_p_t > float(upper_bb_t.iloc[-1]):
-            signals.append("🟡 BB 상단")
-        elif not lower_bb_t.empty and last_p_t < float(lower_bb_t.iloc[-1]):
-            signals.append("🟢 BB 하단")
-
-        if len(hist_t) >= 2:
-            if float(hist_t.iloc[-1]) > 0 and float(hist_t.iloc[-2]) <= 0:
-                signals.append("🟢 MACD↑")
-            elif float(hist_t.iloc[-1]) < 0 and float(hist_t.iloc[-2]) >= 0:
-                signals.append("🔴 MACD↓")
-
-        # 52주 신고가 돌파
-        _52w = calc_52week_range(c_t)
-        if last_p_t >= _52w["high_52"] * 0.99:
-            signals.append("🚀 52주 신고가")
-
-        # 거래량 급증 (오늘 거래량 vs 20일 평균)
-        if "Volume" in df_t.columns:
-            vol_t = df_t["Volume"].dropna()
-            if len(vol_t) >= 21:
-                avg_vol = float(vol_t.iloc[-21:-1].mean())
-                cur_vol = float(vol_t.iloc[-1])
-                if avg_vol > 0 and cur_vol >= avg_vol * 2:
-                    vol_ratio = cur_vol / avg_vol
-                    signals.append(f"📈 거래량 {vol_ratio:.1f}배↑")
-
-        # PER 저평가 + RSI 과매도 복합 신호
-        per_t = info_data.get(t, {}).get("pe_ratio")
-        if per_t and 0 < float(per_t) < 15 and rsi_t < 40:
-            signals.append(f"💎 저PER({per_t:.0f})+저RSI")
-
+        c_t  = df_t["Close"]
+        signals = generate_screener_signals(df_t, info_data.get(t, {}), _ACFG)
         screener_rows.append({
-            "종목": t,
-            "RSI": round(rsi_t, 1),
+            "종목":          t,
+            "RSI":           round(float(calc_rsi(c_t).dropna().iloc[-1]), 1),
             "누적수익률(%)": round(float(calc_cumulative_return(c_t).iloc[-1]), 1),
-            "변동성(%)": round(calc_volatility(c_t)["annual_volatility"], 1),
-            "샤프": calc_sharpe_ratio(c_t),
-            "신호": " / ".join(signals) if signals else "—",
+            "변동성(%)":     round(calc_volatility(c_t)["annual_volatility"], 1),
+            "샤프":          calc_sharpe_ratio(c_t),
+            "신호":          " / ".join(signals) if signals else "—",
         })
 
     if screener_rows:
