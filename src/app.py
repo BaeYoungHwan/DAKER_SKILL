@@ -34,8 +34,17 @@ from data.fetcher import (
     fetch_exchange_rate_series, search_ticker, VALID_PERIODS,
     fetch_market_overview, fetch_news, fetch_earnings, fetch_fear_greed,
     fetch_financials, fetch_dividends,
-    fetch_next_earnings, fetch_institutional_holders, fetch_macro_data,
 )
+try:
+    from data.fetcher import fetch_next_earnings, fetch_institutional_holders, fetch_macro_data
+    _HAS_EXTENDED_FETCHER = True
+except Exception as _e:
+    import streamlit as _st_err
+    _st_err.error(f"Extended fetcher import error: {_e}")
+    _HAS_EXTENDED_FETCHER = False
+    def fetch_next_earnings(ticker: str) -> dict: return {}
+    def fetch_institutional_holders(ticker: str) -> dict: return {}
+    def fetch_macro_data(period: str = "1y") -> dict: return {}
 from analysis.indicators import (
     calc_returns, calc_cumulative_return, calc_annualized_return,
     calc_moving_averages, calc_rsi, calc_bollinger_bands,
