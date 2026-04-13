@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+@page {
+    size: A4;
+    margin: 20mm 18mm 20mm 18mm;
+}
+
+body {
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    font-size: 10pt;
+    line-height: 1.7;
+    color: #1a1a2e;
+    background: #fff;
+}
+
+h1 {
+    font-size: 20pt;
+    font-weight: 700;
+    color: #0d47a1;
+    border-bottom: 3px solid #0d47a1;
+    padding-bottom: 8px;
+    margin: 24px 0 16px;
+}
+
+h2 {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #1565c0;
+    border-left: 4px solid #1565c0;
+    padding-left: 10px;
+    margin: 20px 0 10px;
+    page-break-after: avoid;
+}
+
+h3 {
+    font-size: 11pt;
+    font-weight: 600;
+    color: #1976d2;
+    margin: 14px 0 6px;
+    page-break-after: avoid;
+}
+
+h4 {
+    font-size: 10pt;
+    font-weight: 600;
+    color: #333;
+    margin: 10px 0 4px;
+}
+
+p {
+    margin: 6px 0 8px;
+}
+
+blockquote {
+    border-left: 4px solid #1565c0;
+    background: #e3f2fd;
+    padding: 10px 16px;
+    margin: 12px 0;
+    border-radius: 0 4px 4px 0;
+    font-style: italic;
+    color: #0d47a1;
+    font-size: 11pt;
+    font-weight: 600;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 14px;
+    font-size: 9pt;
+    page-break-inside: avoid;
+}
+
+th {
+    background: #1565c0;
+    color: #fff;
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: 600;
+}
+
+td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e0e0e0;
+    vertical-align: top;
+}
+
+tr:nth-child(even) td {
+    background: #f5f9ff;
+}
+
+code {
+    font-family: 'Consolas', 'D2Coding', monospace;
+    background: #f0f4ff;
+    color: #1a237e;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 9pt;
+}
+
+pre {
+    background: #1e2a3a;
+    color: #e8eaf6;
+    padding: 12px 14px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 10px 0;
+    font-size: 8.5pt;
+    line-height: 1.6;
+    page-break-inside: avoid;
+}
+
+pre code {
+    background: transparent;
+    color: #e8eaf6;
+    padding: 0;
+}
+
+ul, ol {
+    margin: 6px 0 8px 20px;
+}
+
+li {
+    margin: 3px 0;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid #bbdefb;
+    margin: 16px 0;
+}
+
+.header-meta {
+    color: #555;
+    font-size: 9pt;
+    margin-bottom: 4px;
+}
+
+strong {
+    color: #0d47a1;
+}
+
+</style>
+</head>
+<body>
+<h1 id="_1">금융 투자 대시보드 기획서</h1>
+<p><strong>프로젝트명:</strong> DAKER — 금융 투자 분석 대시보드<br />
+<strong>제출일:</strong> 2026-04-10<br />
+<strong>개발자:</strong> BaeYoungWhan<br />
+<strong>플랫폼:</strong> Streamlit Cloud<br />
+<strong>서비스 URL:</strong> https://dakerskills.streamlit.app<br />
+<strong>GitHub:</strong> https://github.com/BaeYoungHwan/DAKER_SKILL</p>
+<hr />
+<h2 id="1">1. 프로젝트 개요</h2>
+<h3 id="11">1.1 한 줄 소개</h3>
+<blockquote>
+<p><strong>Skills.md로 규칙을 정의하고, 바이브 코딩으로 구현한 실시간 금융 투자 분석 대시보드</strong></p>
+</blockquote>
+<h3 id="12">1.2 목적</h3>
+<p>개인 투자자가 주식·ETF 데이터를 직관적으로 분석하고, 투자 의사결정을 지원하는 도구입니다.<br />
+별도의 API 키나 유료 서비스 없이 <strong>Yahoo Finance(yfinance)</strong> 를 통해 글로벌 및 한국 주식 실시간 데이터를 조회합니다.</p>
+<h3 id="13">1.3 핵심 차별점</h3>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API Key 불필요</td>
+<td>yfinance 기반, 별도 인증 없이 즉시 실행</td>
+</tr>
+<tr>
+<td>한국 주식 지원</td>
+<td>한국어 종목명(삼성전자, 카카오 등) 검색 → 자동 티커 변환</td>
+</tr>
+<tr>
+<td>혼합 통화 처리</td>
+<td>KRW/USD 혼합 포트폴리오 실시간 환율 자동 적용</td>
+</tr>
+<tr>
+<td>Skills 기반 자동화</td>
+<td>분석·시각화·인사이트 규칙을 문서로 정의 → AI가 코드로 구현</td>
+</tr>
+<tr>
+<td>자동 리포트 생성</td>
+<td>분석 결과를 .txt 리포트로 다운로드</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2">2. 바이브코딩 방법론</h2>
+<h3 id="21-skillsmd-ai-code">2.1 Skills.md → AI → Code 파이프라인</h3>
+<p>이 프로젝트는 <strong>"규칙을 먼저 문서화하고, AI가 코드를 생성"</strong> 하는 바이브코딩 방식으로 개발되었습니다.</p>
+<div class="codehilite"><pre><span></span><code>Skills/analysis.md      →  투자 지표 계산 규칙 정의
+Skills/visualization.md →  차트 선택 기준 및 색상 시스템 정의
+Skills/insight.md       →  인사이트 등급·형식·우선순위 정의
+        │
+        ▼  (Claude Code — 바이브 코딩)
+        │
+src/data/fetcher.py     →  yfinance 데이터 수집 모듈
+src/analysis/indicators.py  →  기술적 지표 계산 모듈
+src/viz/charts.py       →  Plotly 차트 컴포넌트 모듈
+src/app.py              →  Streamlit UI 통합 앱
+</code></pre></div>
+
+<h3 id="22-skills">2.2 Skills 런타임 파싱</h3>
+<p>Skills 문서에 정의된 수치(RSI 기준 14일, 과매수 70, 샤프비율 양호 기준 1.0 등)는<br />
+<strong><code>src/skills/parser.py</code></strong> 가 런타임에 마크다운을 파싱하여 코드에 주입합니다.</p>
+<div class="codehilite"><pre><span></span><code><span class="n">Skills</span><span class="o">/</span><span class="n">analysis</span><span class="o">.</span><span class="n">md</span><span class="w"> </span><span class="err">수정</span>
+<span class="w">        </span><span class="err">│</span><span class="w"> </span><span class="p">(</span><span class="err">앱</span><span class="w"> </span><span class="err">재시작</span><span class="w"> </span><span class="err">즉시</span><span class="w"> </span><span class="err">반영</span><span class="p">)</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="n">skills</span><span class="o">/</span><span class="n">parser</span><span class="o">.</span><span class="n">py</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">load_analysis_config</span><span class="p">()</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">lru_cache</span>
+<span class="w">        </span><span class="err">│</span>
+<span class="w">        </span><span class="err">▼</span>
+<span class="n">indicators</span><span class="o">.</span><span class="n">py</span><span class="w"> </span><span class="err">·</span><span class="w"> </span><span class="n">app</span><span class="o">.</span><span class="n">py</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="err">동적</span><span class="w"> </span><span class="err">임계치</span><span class="w"> </span><span class="err">적용</span>
+</code></pre></div>
+
+<p>→ <strong>코드 수정 없이 분석 규칙 변경 가능</strong> — Skills.md가 곧 설정 파일</p>
+<h3 id="23-skills">2.3 Skills 문서 구성</h3>
+<h4 id="skillsanalysismd"><code>Skills/analysis.md</code> — 분석 규칙</h4>
+<ul>
+<li>지원 데이터 유형 정의 (주가, ETF, 재무지표, 시장지수, 섹터)</li>
+<li>수익률 계산 공식 명세</li>
+<li>RSI, 이동평균, 볼린저밴드, 변동성, 샤프비율 임계치 정의</li>
+<li>포트폴리오 분산도 평가 기준 (단일 종목 &gt;30%, 섹터 &gt;40% 경고)</li>
+</ul>
+<h4 id="skillsvisualizationmd"><code>Skills/visualization.md</code> — 시각화 규칙</h4>
+<ul>
+<li>데이터 유형별 차트 선택 기준 (캔들스틱/라인/히트맵/산점도)</li>
+<li>TradingView 다크 테마 색상 토큰 시스템 (17개 색상 토큰 정의)</li>
+<li>차트 색상 상수 정의 (MA5/20/60/120/200별 색상)</li>
+<li>레이아웃 그리드 규칙 (2/3 : 1/3 분할 등)</li>
+</ul>
+<h4 id="skillsinsightmd"><code>Skills/insight.md</code> — 인사이트 생성 규칙</h4>
+<ul>
+<li>3단계 형식: 신호 → 해석 → 행동 제안</li>
+<li>등급별 임계치: High/Medium/Low</li>
+<li>인사이트 우선순위 규칙 (High 최상단, 종목당 최대 3개)</li>
+<li>리포트 5섹션 구성 흐름 정의</li>
+</ul>
+<h4 id="skillsinteractionmd-ui"><code>Skills/interaction.md</code> — UI 상태 관리 규칙</h4>
+<ul>
+<li>Session State 초기화 키 정의 (<code>selected_tickers</code>, <code>ticker_names</code>, <code>holdings</code> 등)</li>
+<li>워치리스트 영속성: <code>watchlist.json</code> UTF-8 저장·로드 흐름</li>
+<li>검색 카운터 패턴: 종목 추가 후 검색창 자동 초기화</li>
+<li>URL 파라미터 처리: <code>?tickers=005930.KS</code> 앱 로드 시 자동 추가</li>
+</ul>
+<hr />
+<h2 id="3">3. 핵심 기능 목록</h2>
+<h3 id="31">3.1 사이드바 — 컨트롤 패널</h3>
+<table>
+<thead>
+<tr>
+<th>기능</th>
+<th>상세</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>종목 검색</td>
+<td>한국어 이름 또는 글로벌 티커로 검색, 드롭다운 선택</td>
+</tr>
+<tr>
+<td>직접 티커 입력</td>
+<td>쉼표 구분 입력 (Expander 내부)</td>
+</tr>
+<tr>
+<td>워치리스트 영속화</td>
+<td><code>watchlist.json</code> 저장, 새로고침 후에도 종목 유지</td>
+</tr>
+<tr>
+<td>분석 기간</td>
+<td>1M / 3M / 6M / 1Y / 2Y / 5Y</td>
+</tr>
+<tr>
+<td>차트 옵션</td>
+<td>MA(5/20/60/120/200) 멀티셀렉트, 볼린저밴드, MACD 토글</td>
+</tr>
+<tr>
+<td>벤치마크</td>
+<td>S&amp;P500 / KOSPI / NASDAQ / DOW JONES / 없음</td>
+</tr>
+<tr>
+<td>포트폴리오 비중</td>
+<td>종목별 % 직접 입력 (합계 100% 유효성 검증)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="32-1">3.2 탭 1 — 종목 분석</h3>
+<table>
+<thead>
+<tr>
+<th>컴포넌트</th>
+<th>상세</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>시장 지수 스트립</td>
+<td>S&amp;P500, NASDAQ, DOW, KOSPI, VIX 실시간 카드</td>
+</tr>
+<tr>
+<td>공포/탐욕 지수</td>
+<td>VIX 기반 Fear &amp; Greed 게이지 바</td>
+</tr>
+<tr>
+<td>헤더 배너</td>
+<td>회사명·티커·섹터·현재가·전일대비·라이브 표시등</td>
+</tr>
+<tr>
+<td>KPI 카드 (5개)</td>
+<td>현재가 / 누적수익률 / 연환산변동성 / 샤프비율 / MDD</td>
+</tr>
+<tr>
+<td>재무지표 카드 (4개)</td>
+<td>PER / PBR / EPS / 배당수익률</td>
+</tr>
+<tr>
+<td>모멘텀 배지</td>
+<td>1주·1개월·3개월 수익률 (상승↑/하락↓ 색상)</td>
+</tr>
+<tr>
+<td>52주 범위 바</td>
+<td>저가~고가 트랙 위 현재 위치 표시</td>
+</tr>
+<tr>
+<td>캔들스틱 차트</td>
+<td>OHLCV + MA 오버레이 + 볼린저밴드 + 거래량</td>
+</tr>
+<tr>
+<td>MACD 차트</td>
+<td>MACD·시그널·히스토그램</td>
+</tr>
+<tr>
+<td>RSI 섹션</td>
+<td>반원형 게이지 + 라인차트 (과매수/과매도선)</td>
+</tr>
+<tr>
+<td>스토캐스틱</td>
+<td>%K·%D 라인 + 과매수80/과매도20 기준선</td>
+</tr>
+<tr>
+<td>드로다운 차트</td>
+<td>최대낙폭 시각화 (MDD 수치 → 곡선 차트)</td>
+</tr>
+<tr>
+<td>분기별 재무</td>
+<td>매출·순이익·매출총이익 분기별 바 차트 (EPS 어닝서프라이즈)</td>
+</tr>
+<tr>
+<td>배당 히스토리</td>
+<td>연도별 배당금 + 배당수익률 추이</td>
+</tr>
+<tr>
+<td>실적 캘린더</td>
+<td>다음 실적 발표일 D-day + EPS 서프라이즈(예상 vs 실제) + 발표 14일 이내 변동성 경고</td>
+</tr>
+<tr>
+<td>기관 수급 현황</td>
+<td>주요 보유 비중(외국인·기관·내부자%) + 상위 8개 기관 보유 테이블</td>
+</tr>
+<tr>
+<td>최신 뉴스</td>
+<td>yfinance 기반 최신 뉴스 링크·출처·날짜</td>
+</tr>
+</tbody>
+</table>
+<h3 id="33-2">3.3 탭 2 — 포트폴리오</h3>
+<table>
+<thead>
+<tr>
+<th>컴포넌트</th>
+<th>상세</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KPI 스트립</td>
+<td>포트폴리오 수익률 / 최고 종목 / 최저 종목 / 평균 샤프</td>
+</tr>
+<tr>
+<td>혼합 통화 처리</td>
+<td>KRW+USD 혼합 포트폴리오 실시간 환율 자동 적용</td>
+</tr>
+<tr>
+<td>매입가/수량 입력</td>
+<td>평가손익·손익률 자동 계산</td>
+</tr>
+<tr>
+<td>종목별 성과 테이블</td>
+<td>현재가·수익률·변동성·샤프·MDD·비중·베타</td>
+</tr>
+<tr>
+<td>포트폴리오 수익률 차트</td>
+<td>가중 누적수익률 (vs 벤치마크 비교)</td>
+</tr>
+<tr>
+<td>롤링 샤프 비율</td>
+<td>시간에 따른 샤프비율 추이</td>
+</tr>
+<tr>
+<td>파이차트</td>
+<td>종목별 비중 도넛차트</td>
+</tr>
+<tr>
+<td>리스크 경고</td>
+<td>자산집중·섹터집중·고상관 자동 감지 및 경고</td>
+</tr>
+</tbody>
+</table>
+<h3 id="34-3">3.4 탭 3 — 비교 분석</h3>
+<table>
+<thead>
+<tr>
+<th>컴포넌트</th>
+<th>상세</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>수익률 비교 차트</td>
+<td>전 종목 누적수익률 멀티라인 (기준점=0%)</td>
+</tr>
+<tr>
+<td>기간별 수익률 테이블</td>
+<td>1M·3M·6M·1Y 색상 코딩 비교</td>
+</tr>
+<tr>
+<td>상관관계 히트맵</td>
+<td>종목 간 상관계수 매트릭스</td>
+</tr>
+<tr>
+<td>리스크-수익률 산점도</td>
+<td>변동성(X) vs 수익률(Y) 버블 차트</td>
+</tr>
+<tr>
+<td>섹터 히트맵</td>
+<td>11개 섹터 ETF 기간별 성과 비교</td>
+</tr>
+</tbody>
+</table>
+<h3 id="35-4">3.5 탭 4 — 투자 인사이트</h3>
+<table>
+<thead>
+<tr>
+<th>컴포넌트</th>
+<th>상세</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>전략 백테스트</td>
+<td>MA 크로스(MA20/MA60) · RSI 반전(30/70) 전략 수익률 시뮬레이션, 초기 자본 설정, 거래 내역 확인</td>
+</tr>
+<tr>
+<td>매크로 지표</td>
+<td>USD/KRW 환율, 미국 10년물 국채, 달러인덱스 추이 멀티라인 차트</td>
+</tr>
+<tr>
+<td>종목 스크리너</td>
+<td>RSI&lt;30/70, 골든크로스·데드크로스, BB 돌파, MACD 전환, 52주 신고가, 거래량 N배↑, 저PER+저RSI 복합 조건 신호 테이블</td>
+</tr>
+<tr>
+<td>인사이트 카드</td>
+<td>High·Medium·Info 등급별 색상 카드 (신호→해석→행동 3단계)</td>
+</tr>
+<tr>
+<td>종합 분석 요약</td>
+<td>수익률·변동성·샤프비율 기반 종합 의견</td>
+</tr>
+<tr>
+<td>투자 리포트 다운로드</td>
+<td>핵심지표·기술신호·행동제안 포함 .txt 파일</td>
+</tr>
+</tbody>
+</table>
+<h3 id="36">3.6 외부 시스템 연동</h3>
+<p>URL 쿼리 파라미터를 통해 외부 시스템에서 DAKER로 종목을 자동 전달할 수 있습니다.</p>
+<table>
+<thead>
+<tr>
+<th>항목</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>파라미터</td>
+<td><code>?tickers=티커코드</code> (Yahoo Finance 형식, 예: <code>005930.KS</code>)</td>
+</tr>
+<tr>
+<td>복수 종목</td>
+<td>쉼표 구분 (<code>?tickers=005930.KS,000660.KS</code>)</td>
+</tr>
+<tr>
+<td>동작</td>
+<td>앱 로드 시 워치리스트에 자동 추가 (중복 제거)</td>
+</tr>
+<tr>
+<td>활용 예</td>
+<td>자동매매 대시보드 포지션 탭의 📊 버튼 → DAKER 바로 연동</td>
+</tr>
+</tbody>
+</table>
+<div class="codehilite"><pre><span></span><code>https://dakerskills.streamlit.app?tickers=005930.KS
+</code></pre></div>
+
+<hr />
+<h2 id="4">4. 기술 아키텍처</h2>
+<h3 id="41">4.1 기술 스택</h3>
+<table>
+<thead>
+<tr>
+<th>구분</th>
+<th>기술</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>언어</td>
+<td>Python 3.12</td>
+</tr>
+<tr>
+<td>UI 프레임워크</td>
+<td>Streamlit</td>
+</tr>
+<tr>
+<td>데이터 수집</td>
+<td>yfinance (Yahoo Finance API Wrapper)</td>
+</tr>
+<tr>
+<td>시각화</td>
+<td>Plotly (캔들스틱, 히트맵, 게이지, 산점도 등)</td>
+</tr>
+<tr>
+<td>데이터 처리</td>
+<td>pandas, numpy</td>
+</tr>
+<tr>
+<td>배포</td>
+<td>Streamlit Cloud</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42">4.2 모듈 구조</h3>
+<div class="codehilite"><pre><span></span><code><span class="n">src</span><span class="o">/</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">app</span><span class="o">.</span><span class="n">py</span><span class="w">                  </span><span class="c1"># Streamlit 메인 앱 (UI 통합, 탭 구성)</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">skills</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">parser</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1"># Skills.md 런타임 파서</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - load_analysis_config(): RSI·MA·샤프 임계치 로드</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - load_visualization_config(): 색상 토큰 로드</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - load_insight_rules(): 인사이트 규칙 테이블 파싱</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - lru_cache로 파일 1회만 파싱 (성능 최적화)</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">data</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">base</span><span class="o">.</span><span class="n">py</span><span class="w">             </span><span class="c1"># DataProvider 추상 인터페이스 (ABC)</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">yfinance_provider</span><span class="o">.</span><span class="n">py</span><span class="c1"># YFinanceProvider 구현체</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">fetcher</span><span class="o">.</span><span class="n">py</span><span class="w">          </span><span class="c1"># yfinance 래퍼 (캐싱 포함)</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - fetch_price(): OHLCV 조회 + Rate Limit 재시도</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - fetch_multiple(): 멀티 종목 병렬 조회 (ThreadPoolExecutor)</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - fetch_info(): 재무지표·메타데이터</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - fetch_financials(): 분기별 실적</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - fetch_dividends(): 배당 히스토리</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - fetch_news(): 최신 뉴스</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - fetch_exchange_rate_series(): USD/KRW 환율</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">analysis</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">indicators</span><span class="o">.</span><span class="n">py</span><span class="w">       </span><span class="c1"># 기술적 지표 계산 (임계치는 parser.py에서 로드)</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - RSI, MACD, 볼린저밴드, 스토캐스틱</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - 드로다운, 샤프비율, MDD, 변동성</span>
+<span class="err">│</span><span class="w">                           </span><span class="c1">#   - 골든/데드크로스 탐지, 모멘텀</span>
+<span class="err">└──</span><span class="w"> </span><span class="n">viz</span><span class="o">/</span>
+<span class="w">    </span><span class="err">└──</span><span class="w"> </span><span class="n">charts</span><span class="o">.</span><span class="n">py</span><span class="w">           </span><span class="c1"># Plotly 차트 컴포넌트 (색상은 parser.py에서 로드)</span>
+<span class="w">                            </span><span class="c1">#   - candlestick_chart(), rsi_chart(), rsi_gauge_chart()</span>
+<span class="w">                            </span><span class="c1">#   - macd_chart(), stochastic_chart()</span>
+<span class="w">                            </span><span class="c1">#   - drawdown_chart(), correlation_heatmap()</span>
+<span class="w">                            </span><span class="c1">#   - sector_heatmap(), risk_return_scatter()</span>
+<span class="w">                            </span><span class="c1">#   - rolling_sharpe_chart(), earnings_chart()</span>
+</code></pre></div>
+
+<h3 id="43">4.3 데이터 흐름</h3>
+<div class="codehilite"><pre><span></span><code>사용자 입력 (티커·기간·옵션)
+        │
+        ▼
+fetcher.py → yfinance API → 원시 데이터 (OHLCV, 재무, 뉴스)
+        │
+        ▼
+indicators.py → 기술적 지표 계산 (RSI, MACD, 볼린저밴드 등)
+        │
+        ▼
+charts.py → Plotly Figure 생성
+        │
+        ▼
+app.py → Streamlit 렌더링 → 사용자 화면
+</code></pre></div>
+
+<h3 id="44-tradingview-dark">4.4 색상 시스템 (TradingView Dark 테마)</h3>
+<table>
+<thead>
+<tr>
+<th>토큰</th>
+<th>값</th>
+<th>용도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--bg</code></td>
+<td><code>#131722</code></td>
+<td>앱 전체 배경</td>
+</tr>
+<tr>
+<td><code>--card</code></td>
+<td><code>#1E222D</code></td>
+<td>카드·패널 배경</td>
+</tr>
+<tr>
+<td><code>--accent</code></td>
+<td><code>#2962FF</code></td>
+<td>강조색</td>
+</tr>
+<tr>
+<td><code>--up</code></td>
+<td><code>#26a69a</code></td>
+<td>상승·긍정</td>
+</tr>
+<tr>
+<td><code>--down</code></td>
+<td><code>#ef5350</code></td>
+<td>하락·부정</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="5">5. 한국 주식 지원</h2>
+<h3 id="51">5.1 하이브리드 검색 방식</h3>
+<ol>
+<li><strong>Skills/symbols.json</strong> — 70개+ 주요 종목 외부 파일 매핑 (삼성전자 → 005930.KS), <code>src/skills/parser.py</code>의 <code>load_kr_symbols()</code>가 런타임에 로드</li>
+<li><strong>yfinance 검색 API</strong> — symbols.json 미등록 종목 실시간 검색</li>
+<li><strong>중복 제거</strong> — 공식 회사명 우선 (긴 이름 → 더 정확한 결과)</li>
+</ol>
+<h3 id="52-70">5.2 지원 카테고리 (70개+)</h3>
+<ul>
+<li>반도체·전자: 삼성전자, SK하이닉스, LG전자 등</li>
+<li>2차전지: LG에너지솔루션, 삼성SDI, 에코프로비엠 등</li>
+<li>바이오: 삼성바이오로직스, 셀트리온, 유한양행 등</li>
+<li>금융·보험: KB금융, 신한지주, 삼성생명 등</li>
+<li>통신·플랫폼: 카카오, 네이버, SK텔레콤 등</li>
+<li>자동차·철강·건설: 현대차, 기아, POSCO 등</li>
+</ul>
+<hr />
+<h2 id="6">6. 안정성 및 데이터 품질</h2>
+<h3 id="61-rate-limit">6.1 Rate Limit 핸들링</h3>
+<ul>
+<li><code>fetch_price()</code>: 실패 시 최대 3회 자동 재시도 (지수 백오프)</li>
+<li><code>fetch_multiple()</code>: 종목 간 0.3초 딜레이로 API 과부하 방지</li>
+</ul>
+<h3 id="62">6.2 데이터 이상치 처리</h3>
+<ul>
+<li>일별 수익률 ±15% 초과 시 이상치 플래그 (기준은 Skills/analysis.md에서 런타임 로드)</li>
+<li>이상치 경고: 종목당 최대 3건 + 접힘(collapsed) 표시로 UX 방해 최소화</li>
+<li>결측값: forward fill 처리 (Skills/analysis.md §4 기준)</li>
+</ul>
+<h3 id="63">6.3 오류 방어</h3>
+<ul>
+<li>존재하지 않는 티커 입력 시 앱 크래시 없이 graceful 처리</li>
+<li>데이터 없는 재무항목은 UI에서 자동 미표시</li>
+<li>단일 종목 / 멀티 종목 모두 오류 없이 동작</li>
+</ul>
+<hr />
+<h2 id="7">7. 실행 방법</h2>
+<h3 id="_2">로컬 실행</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># 의존성 설치</span>
+pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+
+<span class="c1"># 앱 실행</span>
+streamlit<span class="w"> </span>run<span class="w"> </span>src/app.py
+</code></pre></div>
+
+<p>브라우저 <code>http://localhost:8501</code> 접속</p>
+<h3 id="streamlit-cloud">Streamlit Cloud 배포</h3>
+<p>GitHub 연동 후 자동 배포<br />
+<code>requirements.txt</code> 기반 패키지 자동 설치</p>
+<hr />
+<h2 id="8">8. 향후 개선 계획</h2>
+<table>
+<thead>
+<tr>
+<th>우선순위</th>
+<th>항목</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Medium</td>
+<td>알림 기능</td>
+<td>RSI 임계치 도달 시 브라우저 푸시 알림</td>
+</tr>
+<tr>
+<td>Low</td>
+<td>PDF 리포트</td>
+<td>분석 결과 PDF 다운로드 (현재 .txt 제공)</td>
+</tr>
+<tr>
+<td>Low</td>
+<td>다크/라이트 모드 토글</td>
+<td>사용자 선택 테마</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9">9. 평가 기준 대응</h2>
+<table>
+<thead>
+<tr>
+<th>평가 항목</th>
+<th>대응 내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>범용성</td>
+<td>fetcher / indicators / charts / app 모듈 분리, DataProvider 추상화로 데이터 소스 교체 가능</td>
+</tr>
+<tr>
+<td>Skills.md 설계</td>
+<td>분석·시각화·인사이트 3개 문서, 임계치·색상코드·형식 명확히 정의. 런타임 파싱으로 코드 수정 없이 규칙 변경</td>
+</tr>
+<tr>
+<td>대시보드 자동 생성</td>
+<td>Skills 규칙 기반 KPI·차트·인사이트 자동 구성, 탭 4개 완성. 리포트 .txt 다운로드</td>
+</tr>
+<tr>
+<td>바이브코딩 활용</td>
+<td>Skills.md → Claude Code → src/ 전 흐름을 AI가 코드 생성. 임계치까지 Skills 파일로 관리</td>
+</tr>
+<tr>
+<td>실용성·창의성</td>
+<td>API Key 불필요, 한국어 검색(70개+), KRW/USD 혼합통화 실시간 환율, 자동 리포트, URL 파라미터 외부 연동</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>작성일: 2026-04-10</em></p>
+</body>
+</html>
