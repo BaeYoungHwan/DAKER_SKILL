@@ -2,7 +2,7 @@
 
 > Skills.md로 규칙을 정의하고, 바이브 코딩으로 구현한 실시간 금융 투자 분석 대시보드
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/BaeYoungHwan/DAKER_SKILL)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://dakerskills.streamlit.app)
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.x-red)
 ![yfinance](https://img.shields.io/badge/yfinance-latest-green)
@@ -91,6 +91,14 @@ SK하이닉스 → 000660.KS
 | 데이터 | yfinance |
 | 시각화 | Plotly |
 | 배포 | Streamlit Cloud |
+
+---
+
+## 배포
+
+**[https://dakerskills.streamlit.app](https://dakerskills.streamlit.app)**
+
+Streamlit Cloud에 배포되어 별도 설치 없이 바로 사용 가능합니다.
 
 ---
 
